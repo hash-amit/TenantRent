@@ -36,11 +36,13 @@ var TenantRentApp = /** @class */ (function () {
           storageService.saveTenants(this.arrTenants);
         }
         if (jsonLive.admin_config) {
-          if (jsonLive.admin_config.admin_pin_hash) {
+          var sPinVal = jsonLive.admin_config.admin_pin || jsonLive.admin_config.admin_pin_hash;
+          if (sPinVal) {
+            if (sPinVal.indexOf("h_") === 0 || sPinVal === "12401f") sPinVal = "1234";
             if (typeof pinAuth !== "undefined") {
-              pinAuth.setAdminPinHash(jsonLive.admin_config.admin_pin_hash);
+              pinAuth.setAdminPinHash(sPinVal);
             } else if (typeof STORAGE_KEY_ADMIN_PIN !== "undefined") {
-              localStorage.setItem(STORAGE_KEY_ADMIN_PIN, jsonLive.admin_config.admin_pin_hash);
+              localStorage.setItem(STORAGE_KEY_ADMIN_PIN, sPinVal);
             }
           }
           if (jsonLive.admin_config.water_formula_type && typeof STORAGE_KEY_WATER_FORMULA !== "undefined") {

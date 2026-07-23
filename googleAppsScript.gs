@@ -1,16 +1,14 @@
 /**
  * TenantRent — Google Apps Script (3-Sheet Architecture)
- * Sheet 1: "tenants"        — One row per tenant profile
+ * Sheet 1: "tenants"        — One row per tenant profile (Column K = "pin")
  * Sheet 2: "billing_records" — One row per monthly billing entry
- * Sheet 3: "admin_config"    — Admin PIN hash & app settings
+ * Sheet 3: "admin_config"    — Admin PIN & app settings
  *
  * HOW TO USE:
  * 1. Open your Google Sheet → Extensions → Apps Script
  * 2. Delete all existing code and paste this entire file
- * 3. Click Deploy → New deployment → Web app
- *    - Execute as: Me
- *    - Who has access: Anyone
- * 4. Click Deploy → Copy the Web App URL → paste it in your TenantRent website
+ * 3. In the toolbar, select "setupSheets" and click Run ▶️
+ * 4. Click Deploy → New deployment → Web app (Access: Anyone)
  */
 
 // ─── Sheet name constants ─────────────────────────────────────────────────────
@@ -30,7 +28,7 @@ var TENANT_COLS = {
   meter_rate:     7,   // H — ₹ per utility unit
   share_key:      8,   // I — Read-only share token
   status:         9,   // J — Active | Inactive
-  pin_hash:      10,   // K — Hashed 4-digit Tenant PIN
+  pin:           10,   // K — Plain text 4-digit Tenant PIN e.g. 1234
   created_at:    11    // L — ISO timestamp
 };
 
@@ -63,7 +61,7 @@ var BILLING_COLS = {
 // ─── Header rows ─────────────────────────────────────────────────────────────
 var TENANT_HEADERS = [
   "tenant_id","name","room","phone","move_in_date",
-  "advance","base_rent","meter_rate","share_key","status","pin_hash","created_at"
+  "advance","base_rent","meter_rate","share_key","status","pin","created_at"
 ];
 
 var BILLING_HEADERS = [
@@ -78,10 +76,32 @@ var BILLING_HEADERS = [
 
 var ADMIN_HEADERS = ["key", "value", "updated_at"];
 
-// Default admin PIN hash for "1234"
-var DEFAULT_ADMIN_PIN_HASH = "h_12401f";
+// Default admin PIN
+var DEFAULT_ADMIN_PIN = "1234";
 
-// ─── Ensure sheets exist with header rows ────────────────────────────────────
+// ─── Direct Setup Runner (Select "setupSheets" & click Run ▶️ in Apps Script) ───
+function setupSheets() {
+  var sheets = ensureSheets();
+  var wsTenants = sheets.tenants;
+
+  // Force header row update
+  wsTenants.getRange(1, 1, 1, TENANT_HEADERS.length).setValues([TENANT_HEADERS]).setFontWeight("bold");
+
+  // Fill default PIN "1234" for existing rows if empty
+  var iLastRow = wsTenants.getLastRow();
+  if (iLastRow > 1) {
+    for (var r = 2; r <= iLastRow; r++) {
+      var valPin = val(wsTenants.getRange(r, TENANT_COLS.pin + 1).getValue(), 0);
+      if (!valPin || valPin.indexOf("h_") === 0) {
+        wsTenants.getRange(r, TENANT_COLS.pin + 1).setValue("1234");
+      }
+    }
+  }
+
+  Logger.log("✅ All sheets updated! Column 'pin' created at Column K.");
+}
+
+// ─── Ensure sheets exist with header rows & correct schema ────────────────────
 function ensureSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -90,6 +110,23 @@ function ensureSheets() {
     wsTenants = ss.insertSheet(SHEET_TENANTS);
     wsTenants.appendRow(TENANT_HEADERS);
     wsTenants.getRange(1, 1, 1, TENANT_HEADERS.length).setFontWeight("bold");
+  } else {
+    // Migration check: ensure column K is "pin"
+    var arrHeaders = wsTenants.getRange(1, 1, 1, Math.max(wsTenants.getLastColumn(), 1)).getValues()[0];
+    var iPinIdx = arrHeaders.indexOf("pin");
+    var iPinHashIdx = arrHeaders.indexOf("pin_hash");
+
+    if (iPinHashIdx !== -1) {
+      wsTenants.getRange(1, iPinHashIdx + 1).setValue("pin").setFontWeight("bold");
+    } else if (iPinIdx === -1) {
+      var iCreatedIdx = arrHeaders.indexOf("created_at");
+      if (iCreatedIdx !== -1) {
+        wsTenants.insertColumnBefore(iCreatedIdx + 1);
+        wsTenants.getRange(1, iCreatedIdx + 1).setValue("pin").setFontWeight("bold");
+      } else {
+        wsTenants.getRange(1, 1, 1, TENANT_HEADERS.length).setValues([TENANT_HEADERS]).setFontWeight("bold");
+      }
+    }
   }
 
   var wsBilling = ss.getSheetByName(SHEET_BILLING);
@@ -105,7 +142,7 @@ function ensureSheets() {
     wsAdmin.appendRow(ADMIN_HEADERS);
     wsAdmin.getRange(1, 1, 1, ADMIN_HEADERS.length).setFontWeight("bold");
     var sNow = new Date().toISOString();
-    wsAdmin.appendRow(["admin_pin_hash", DEFAULT_ADMIN_PIN_HASH, sNow]);
+    wsAdmin.appendRow(["admin_pin", DEFAULT_ADMIN_PIN, sNow]);
     wsAdmin.appendRow(["water_formula_type", "default", sNow]);
     wsAdmin.appendRow(["water_formula_divisor", "2", sNow]);
   }
@@ -135,6 +172,9 @@ function readAllTenants(wsTenants, wsBilling) {
       .filter(function(b) { return val(b, BILLING_COLS.tenant_id) === sTenantId; })
       .map(function(b) { return rowToBillingObj(b); });
 
+    var rawPin = val(row, TENANT_COLS.pin) || "1234";
+    if (rawPin.indexOf("h_") === 0) rawPin = "1234";
+
     return {
       tenant_id:    sTenantId,
       name:         val(row, TENANT_COLS.name),
@@ -146,7 +186,8 @@ function readAllTenants(wsTenants, wsBilling) {
       meter_rate:   numVal(row, TENANT_COLS.meter_rate),
       share_key:    val(row, TENANT_COLS.share_key),
       status:       val(row, TENANT_COLS.status) || "Active",
-      pin_hash:     val(row, TENANT_COLS.pin_hash) || "",
+      pin:          rawPin,
+      pin_hash:     rawPin,
       created_at:   val(row, TENANT_COLS.created_at),
       billing_records: arrRecords
     };
@@ -158,7 +199,8 @@ function readAllTenants(wsTenants, wsBilling) {
 function readAdminConfig(wsAdmin) {
   var rows = getAllRows(wsAdmin);
   var config = {
-    admin_pin_hash: DEFAULT_ADMIN_PIN_HASH,
+    admin_pin: DEFAULT_ADMIN_PIN,
+    admin_pin_hash: DEFAULT_ADMIN_PIN,
     water_formula_type: "default",
     water_formula_divisor: "2"
   };
@@ -166,7 +208,15 @@ function readAdminConfig(wsAdmin) {
   rows.forEach(function(r) {
     var k = val(r, 0);
     var v = val(r, 1);
-    if (k) config[k] = v;
+    if (k) {
+      config[k] = v;
+      if (k === "admin_pin_hash" && v) {
+        var cleanV = String(v).replace(/^h_/, "");
+        if (cleanV === "12401f") cleanV = "1234";
+        config["admin_pin"] = cleanV;
+        config["admin_pin_hash"] = cleanV;
+      }
+    }
   });
 
   return config;
@@ -240,10 +290,13 @@ function doPost(e) {
 // ─── Upsert helpers ──────────────────────────────────────────────────────────
 function upsertTenant(ws, t) {
   var sNow = new Date().toISOString();
+  var sPin = (t.pin || t.pin_hash || "1234").toString().replace(/^h_/, "");
+  if (sPin === "12401f") sPin = "1234";
+
   var newRow = [
     t.tenant_id, t.name, t.room, t.phone, t.move_in_date,
     t.advance, t.base_rent, t.meter_rate, t.share_key,
-    t.status || "Active", t.pin_hash || "", t.created_at || sNow
+    t.status || "Active", sPin, t.created_at || sNow
   ];
   upsertRow(ws, TENANT_COLS.tenant_id, t.tenant_id, newRow);
 }
@@ -268,6 +321,9 @@ function updateAdminConfig(wsAdmin, objConfig) {
     if (objConfig.hasOwnProperty(key)) {
       var valStr = String(objConfig[key]);
       upsertRow(wsAdmin, 0, key, [key, valStr, sNow]);
+      if (key === "admin_pin") {
+        upsertRow(wsAdmin, 0, "admin_pin_hash", ["admin_pin_hash", valStr, sNow]);
+      }
     }
   }
 }

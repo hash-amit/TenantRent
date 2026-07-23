@@ -20,12 +20,8 @@ var SESSION_DURATION_MS     = 8 * 60 * 60 * 1000;              // 8 hours
 var DEFAULT_PIN             = "1234";
 
 function hashPin(psPin) {
-  var iHash = 0;
-  for (var i = 0; i < psPin.length; i++) {
-    iHash = ((iHash << 5) - iHash) + psPin.charCodeAt(i);
-    iHash |= 0;
-  }
-  return "h_" + Math.abs(iHash).toString(16);
+  var sClean = (psPin || "1234").toString().replace(/^h_/, "").trim();
+  return sClean === "12401f" ? "1234" : sClean;
 }
 
 var pinAuth = (function () {
@@ -192,16 +188,16 @@ var pinAuth = (function () {
         ? app.arrTenants.find(function (t) { return t.tenant_id === sTenantId; })
         : null;
 
-      var sExpectedHash = objTenant && objTenant.pin_hash
-        ? objTenant.pin_hash
-        : hashPin(DEFAULT_PIN);
+      var sExpectedPin = objTenant && (objTenant.pin || objTenant.pin_hash)
+        ? hashPin(objTenant.pin || objTenant.pin_hash)
+        : DEFAULT_PIN;
 
-      if (hashPin(_sCurrentInputPin) === sExpectedHash) {
+      if (hashPin(_sCurrentInputPin) === sExpectedPin) {
         _startSession("tenant", sTenantId);
         _unlockUI();
 
         // Prompt tenant to change default PIN if it's still 1234
-        if (sExpectedHash === hashPin(DEFAULT_PIN)) {
+        if (sExpectedPin === DEFAULT_PIN) {
           setTimeout(function () {
             alert("⚠️ Welcome! Your default PIN is 1234. Please click the 🔒 icon in the header to change your PIN.");
           }, 300);
@@ -335,9 +331,9 @@ var pinAuth = (function () {
             alert("Current Admin PIN is incorrect.");
             return;
           }
-          localStorage.setItem(STORAGE_KEY_ADMIN_PIN, hashPin(sNew));
+          localStorage.setItem(STORAGE_KEY_ADMIN_PIN, sNew);
           if (typeof googleSheetsService !== "undefined" && googleSheetsService.bIsConnected) {
-            await googleSheetsService.updateAdminConfig({ admin_pin_hash: hashPin(sNew) });
+            await googleSheetsService.updateAdminConfig({ admin_pin: sNew, admin_pin_hash: sNew });
           }
           _closeModal();
           alert("✅ Admin PIN updated successfully & synced to Google Sheet!");
@@ -347,14 +343,15 @@ var pinAuth = (function () {
             ? app.arrTenants.find(function (t) { return t.tenant_id === _sLoggedInTenantId; })
             : null;
 
-          var sExpectedHash = objTenant && objTenant.pin_hash ? objTenant.pin_hash : hashPin(DEFAULT_PIN);
-          if (hashPin(sCurrent) !== sExpectedHash) {
+          var sExpectedPin = objTenant && (objTenant.pin || objTenant.pin_hash) ? hashPin(objTenant.pin || objTenant.pin_hash) : DEFAULT_PIN;
+          if (hashPin(sCurrent) !== sExpectedPin) {
             alert("Current PIN is incorrect.");
             return;
           }
 
           if (objTenant) {
-            objTenant.pin_hash = hashPin(sNew);
+            objTenant.pin = sNew;
+            objTenant.pin_hash = sNew;
             if (typeof app !== "undefined" && typeof app._saveTenant === "function") {
               await app._saveTenant(objTenant);
             }
