@@ -1,7 +1,8 @@
 /**
- * TenantRent — Google Apps Script (Clean 2-Sheet Architecture)
+ * TenantRent — Google Apps Script (3-Sheet Architecture)
  * Sheet 1: "tenants"        — One row per tenant profile
  * Sheet 2: "billing_records" — One row per monthly billing entry
+ * Sheet 3: "admin_config"    — Admin PIN hash & app settings
  *
  * HOW TO USE:
  * 1. Open your Google Sheet → Extensions → Apps Script
@@ -15,6 +16,7 @@
 // ─── Sheet name constants ─────────────────────────────────────────────────────
 var SHEET_TENANTS  = "tenants";
 var SHEET_BILLING  = "billing_records";
+var SHEET_ADMIN    = "admin_config";
 
 // ─── Column definitions for "tenants" sheet (A=0, B=1 …) ────────────────────
 var TENANT_COLS = {
@@ -28,7 +30,8 @@ var TENANT_COLS = {
   meter_rate:     7,   // H — ₹ per utility unit
   share_key:      8,   // I — Read-only share token
   status:         9,   // J — Active | Inactive
-  created_at:    10    // K — ISO timestamp
+  pin_hash:      10,   // K — Hashed 4-digit Tenant PIN
+  created_at:    11    // L — ISO timestamp
 };
 
 // ─── Column definitions for "billing_records" sheet ──────────────────────────
@@ -50,7 +53,7 @@ var BILLING_COLS = {
   extra:         14,   // O — Extra / miscellaneous charges
   total_due:     15,   // P — Grand total due = meter_charges + rent + extra
   paid_amount:   16,   // Q — Amount received from tenant
-  paid_date:     17,   // R — Date payment was received
+  paid_date:      17,   // R — Date payment was received
   balance:       18,   // S — Outstanding balance = total_due − paid_amount
   payment_status: 19,  // T — Paid | Partial | Pending
   notes:         20,   // U — Remarks / notes
@@ -60,7 +63,7 @@ var BILLING_COLS = {
 // ─── Header rows ─────────────────────────────────────────────────────────────
 var TENANT_HEADERS = [
   "tenant_id","name","room","phone","move_in_date",
-  "advance","base_rent","meter_rate","share_key","status","created_at"
+  "advance","base_rent","meter_rate","share_key","status","pin_hash","created_at"
 ];
 
 var BILLING_HEADERS = [
@@ -72,6 +75,11 @@ var BILLING_HEADERS = [
   "paid_amount","paid_date","balance","payment_status",
   "notes","created_at"
 ];
+
+var ADMIN_HEADERS = ["key", "value", "updated_at"];
+
+// Default admin PIN hash for "1234"
+var DEFAULT_ADMIN_PIN_HASH = "h_12401f";
 
 // ─── Ensure sheets exist with header rows ────────────────────────────────────
 function ensureSheets() {
@@ -91,29 +99,38 @@ function ensureSheets() {
     wsBilling.getRange(1, 1, 1, BILLING_HEADERS.length).setFontWeight("bold");
   }
 
-  return { tenants: wsTenants, billing: wsBilling };
+  var wsAdmin = ss.getSheetByName(SHEET_ADMIN);
+  if (!wsAdmin) {
+    wsAdmin = ss.insertSheet(SHEET_ADMIN);
+    wsAdmin.appendRow(ADMIN_HEADERS);
+    wsAdmin.getRange(1, 1, 1, ADMIN_HEADERS.length).setFontWeight("bold");
+    var sNow = new Date().toISOString();
+    wsAdmin.appendRow(["admin_pin_hash", DEFAULT_ADMIN_PIN_HASH, sNow]);
+    wsAdmin.appendRow(["water_formula_type", "default", sNow]);
+    wsAdmin.appendRow(["water_formula_divisor", "2", sNow]);
+  }
+
+  return { tenants: wsTenants, billing: wsBilling, admin: wsAdmin };
 }
 
-// ─── HTTP GET — fetch all tenants + their billing records ───────────────────
+// ─── HTTP GET — fetch all tenants, billing records & admin config ───────────
 function doGet(e) {
   try {
     var sheets = ensureSheets();
     var arrTenants = readAllTenants(sheets.tenants, sheets.billing);
-    return jsonResponse({ status: "success", data: arrTenants });
+    var objAdmin   = readAdminConfig(sheets.admin);
+    return jsonResponse({ status: "success", data: arrTenants, admin_config: objAdmin });
   } catch (err) {
     return jsonResponse({ status: "error", message: err.toString() });
   }
 }
 
 function readAllTenants(wsTenants, wsBilling) {
-  // Read all tenants
   var tenantRows = getAllRows(wsTenants);
-  // Read all billing records
   var billingRows = getAllRows(wsBilling);
 
   var arrTenants = tenantRows.map(function(row) {
     var sTenantId = val(row, TENANT_COLS.tenant_id);
-    // Find billing records that belong to this tenant
     var arrRecords = billingRows
       .filter(function(b) { return val(b, BILLING_COLS.tenant_id) === sTenantId; })
       .map(function(b) { return rowToBillingObj(b); });
@@ -129,12 +146,30 @@ function readAllTenants(wsTenants, wsBilling) {
       meter_rate:   numVal(row, TENANT_COLS.meter_rate),
       share_key:    val(row, TENANT_COLS.share_key),
       status:       val(row, TENANT_COLS.status) || "Active",
+      pin_hash:     val(row, TENANT_COLS.pin_hash) || "",
       created_at:   val(row, TENANT_COLS.created_at),
       billing_records: arrRecords
     };
   });
 
   return arrTenants;
+}
+
+function readAdminConfig(wsAdmin) {
+  var rows = getAllRows(wsAdmin);
+  var config = {
+    admin_pin_hash: DEFAULT_ADMIN_PIN_HASH,
+    water_formula_type: "default",
+    water_formula_divisor: "2"
+  };
+
+  rows.forEach(function(r) {
+    var k = val(r, 0);
+    var v = val(r, 1);
+    if (k) config[k] = v;
+  });
+
+  return config;
 }
 
 function rowToBillingObj(row) {
@@ -173,18 +208,15 @@ function doPost(e) {
 
     switch (action) {
 
-      // ── Tenant CRUD ──────────────────────────────────────────────────────
       case "upsert_tenant":
         upsertTenant(sheets.tenants, payload.tenant);
         return jsonResponse({ status: "success", message: "Tenant saved." });
 
       case "delete_tenant":
         deleteRowById(sheets.tenants, TENANT_COLS.tenant_id, payload.tenant_id);
-        // Also delete all billing records for this tenant
         deleteRowsWhere(sheets.billing, BILLING_COLS.tenant_id, payload.tenant_id);
         return jsonResponse({ status: "success", message: "Tenant and records deleted." });
 
-      // ── Billing record CRUD ──────────────────────────────────────────────
       case "upsert_billing":
         upsertBilling(sheets.billing, payload.record);
         return jsonResponse({ status: "success", message: "Billing record saved." });
@@ -192,6 +224,10 @@ function doPost(e) {
       case "delete_billing":
         deleteRowById(sheets.billing, BILLING_COLS.record_id, payload.record_id);
         return jsonResponse({ status: "success", message: "Billing record deleted." });
+
+      case "update_admin_config":
+        updateAdminConfig(sheets.admin, payload.config);
+        return jsonResponse({ status: "success", message: "Admin settings updated." });
 
       default:
         return jsonResponse({ status: "error", message: "Unknown action: " + action });
@@ -207,7 +243,7 @@ function upsertTenant(ws, t) {
   var newRow = [
     t.tenant_id, t.name, t.room, t.phone, t.move_in_date,
     t.advance, t.base_rent, t.meter_rate, t.share_key,
-    t.status || "Active", t.created_at || sNow
+    t.status || "Active", t.pin_hash || "", t.created_at || sNow
   ];
   upsertRow(ws, TENANT_COLS.tenant_id, t.tenant_id, newRow);
 }
@@ -226,10 +262,19 @@ function upsertBilling(ws, b) {
   upsertRow(ws, BILLING_COLS.record_id, b.record_id, newRow);
 }
 
+function updateAdminConfig(wsAdmin, objConfig) {
+  var sNow = new Date().toISOString();
+  for (var key in objConfig) {
+    if (objConfig.hasOwnProperty(key)) {
+      var valStr = String(objConfig[key]);
+      upsertRow(wsAdmin, 0, key, [key, valStr, sNow]);
+    }
+  }
+}
+
 // ─── Generic sheet utilities ─────────────────────────────────────────────────
 function getAllRows(ws) {
   var arrAll = ws.getDataRange().getValues();
-  // Skip header row (row index 0)
   return arrAll.slice(1).filter(function(r) { return r[0] !== "" && r[0] !== null && r[0] !== undefined; });
 }
 
@@ -237,18 +282,15 @@ function upsertRow(ws, iIdCol, sId, arrNewRow) {
   var arrAll = ws.getDataRange().getValues();
   for (var i = 1; i < arrAll.length; i++) {
     if (String(arrAll[i][iIdCol]).trim() === String(sId).trim()) {
-      // Update existing row
       ws.getRange(i + 1, 1, 1, arrNewRow.length).setValues([arrNewRow]);
       return;
     }
   }
-  // Not found → append new row
   ws.appendRow(arrNewRow);
 }
 
 function deleteRowById(ws, iIdCol, sId) {
   var arrAll = ws.getDataRange().getValues();
-  // Iterate bottom-up so row index stays valid after deletions
   for (var i = arrAll.length - 1; i >= 1; i--) {
     if (String(arrAll[i][iIdCol]).trim() === String(sId).trim()) {
       ws.deleteRow(i + 1);

@@ -1,24 +1,25 @@
 /**
- * TenantRent — PIN Authentication Module
+ * TenantRent — Dual-Role PIN Authentication & Session Manager
  *
- * Logic:
- * 1. On page load:
- *    - If URL hash is #tenant/... → skip PIN → show read-only Tenant Portal directly.
- *    - Otherwise → show PIN lock screen.
- *    - If admin session is still valid (within 8 hours) → skip PIN automatically.
+ * Roles:
+ * 1. ADMIN (Landlord)
+ *    - Full access to Admin View, tenant management, billing entries, stats.
+ *    - Default PIN: 1234 (changeable via Change PIN modal).
  *
- * 2. Default PIN: 1234  (stored as a simple hash in localStorage — change via 🔐 button)
- * 3. Session: once correct PIN is entered, admin is unlocked for 8 hours on that device.
- * 4. Tenant share link: always bypasses PIN → read-only view, no admin controls.
+ * 2. TENANT
+ *    - Isolated access strictly to logged-in tenant's own passbook/portal.
+ *    - Default PIN: 1234 for new tenants (changeable by tenant or admin).
+ *    - Cannot switch tenants, see admin view, or view other tenants' records.
  */
 
-var STORAGE_KEY_PIN     = "tenantrent_v2_pin_hash";
-var STORAGE_KEY_SESSION = "tenantrent_v2_session_ts";
-var SESSION_DURATION_MS = 8 * 60 * 60 * 1000;    // 8 hours
-var DEFAULT_PIN         = "1234";
+var STORAGE_KEY_ADMIN_PIN   = "tenantrent_v2_admin_pin";
+var STORAGE_KEY_AUTH_ROLE   = "tenantrent_v2_auth_role";      // "admin" | "tenant"
+var STORAGE_KEY_AUTH_TENANT = "tenantrent_v2_auth_tenant_id"; // tenant_id if role === "tenant"
+var STORAGE_KEY_SESSION_TS  = "tenantrent_v2_session_ts";
+var SESSION_DURATION_MS     = 8 * 60 * 60 * 1000;              // 8 hours
+var DEFAULT_PIN             = "1234";
 
-// ─── Simple hash (not cryptographic, just obfuscation for localStorage) ──────
-function _hashPin(psPin) {
+function hashPin(psPin) {
   var iHash = 0;
   for (var i = 0; i < psPin.length; i++) {
     iHash = ((iHash << 5) - iHash) + psPin.charCodeAt(i);
@@ -27,191 +28,354 @@ function _hashPin(psPin) {
   return "h_" + Math.abs(iHash).toString(16);
 }
 
-function _getStoredHash() {
-  return localStorage.getItem(STORAGE_KEY_PIN) || _hashPin(DEFAULT_PIN);
-}
+var pinAuth = (function () {
 
-function _isPinCorrect(psPin) {
-  return _hashPin(psPin) === _getStoredHash();
-}
+  // ── State ──────────────────────────────────────────────────────────────────
+  var _sSelectedRole     = "admin"; // "admin" | "tenant"
+  var _sCurrentInputPin  = "";
+  var _sLoggedInRole     = null;    // "admin" | "tenant" | null
+  var _sLoggedInTenantId = null;
 
-function _isSessionValid() {
-  var sTs = localStorage.getItem(STORAGE_KEY_SESSION);
-  if (!sTs) return false;
-  return (Date.now() - parseInt(sTs, 10)) < SESSION_DURATION_MS;
-}
+  // ── Internal Helpers ───────────────────────────────────────────────────────
+  function _getAdminPinHash() {
+    return localStorage.getItem(STORAGE_KEY_ADMIN_PIN) || hashPin(DEFAULT_PIN);
+  }
 
-function _startSession() {
-  localStorage.setItem(STORAGE_KEY_SESSION, Date.now().toString());
-}
+  function _isAdminPinCorrect(psPin) {
+    return hashPin(psPin) === _getAdminPinHash();
+  }
 
-function _clearSession() {
-  localStorage.removeItem(STORAGE_KEY_SESSION);
-}
+  function _isSessionValid() {
+    var sTs = localStorage.getItem(STORAGE_KEY_SESSION_TS);
+    if (!sTs) return false;
+    return (Date.now() - parseInt(sTs, 10)) < SESSION_DURATION_MS;
+  }
 
-// ─── Check if this is a tenant share link ────────────────────────────────────
-function _isTenantShareLink() {
-  return window.location.hash.startsWith("#tenant/");
-}
-
-// ─── DOM references ───────────────────────────────────────────────────────────
-var lockScreen  = document.getElementById("pin-lock-screen");
-var pinCard     = document.getElementById("pin-card");
-var pinDots     = [
-  document.getElementById("dot-0"),
-  document.getElementById("dot-1"),
-  document.getElementById("dot-2"),
-  document.getElementById("dot-3")
-];
-var pinError    = document.getElementById("pin-error");
-var pinLabel    = document.getElementById("pin-label");
-
-var sCurrentPin = "";
-
-// ─── Update dot indicators ────────────────────────────────────────────────────
-function _updateDots() {
-  for (var i = 0; i < 4; i++) {
-    if (i < sCurrentPin.length) {
-      pinDots[i].classList.add("filled");
+  function _startSession(psRole, psTenantId) {
+    localStorage.setItem(STORAGE_KEY_SESSION_TS, Date.now().toString());
+    localStorage.setItem(STORAGE_KEY_AUTH_ROLE, psRole);
+    if (psTenantId) {
+      localStorage.setItem(STORAGE_KEY_AUTH_TENANT, psTenantId);
     } else {
-      pinDots[i].classList.remove("filled");
+      localStorage.removeItem(STORAGE_KEY_AUTH_TENANT);
+    }
+    _sLoggedInRole     = psRole;
+    _sLoggedInTenantId = psTenantId || null;
+  }
+
+  function _clearSession() {
+    localStorage.removeItem(STORAGE_KEY_SESSION_TS);
+    localStorage.removeItem(STORAGE_KEY_AUTH_ROLE);
+    localStorage.removeItem(STORAGE_KEY_AUTH_TENANT);
+    _sLoggedInRole     = null;
+    _sLoggedInTenantId = null;
+  }
+
+  // ── UI Updates ─────────────────────────────────────────────────────────────
+  function _updateDots() {
+    var dots = [
+      document.getElementById("dot-0"),
+      document.getElementById("dot-1"),
+      document.getElementById("dot-2"),
+      document.getElementById("dot-3")
+    ];
+    for (var i = 0; i < 4; i++) {
+      if (dots[i]) {
+        dots[i].classList.toggle("filled", i < _sCurrentInputPin.length);
+      }
     }
   }
-}
 
-// ─── Handle keypad press ──────────────────────────────────────────────────────
-function _onKeyPress(pDigit) {
-  if (sCurrentPin.length >= 4) return;
-  sCurrentPin += pDigit;
-  pinError.innerText = "";
-  _updateDots();
-
-  if (sCurrentPin.length === 4) {
-    _verifyPin();
-  }
-}
-
-function _onDelete() {
-  if (sCurrentPin.length > 0) {
-    sCurrentPin = sCurrentPin.slice(0, -1);
+  function _setRoleUI(psRole) {
+    _sSelectedRole    = psRole;
+    _sCurrentInputPin = "";
     _updateDots();
-    pinError.innerText = "";
+
+    var errEl = document.getElementById("pin-error");
+    if (errEl) errEl.innerText = "";
+
+    var btnAdmin  = document.getElementById("login-role-admin");
+    var btnTenant = document.getElementById("login-role-tenant");
+    var tenantSelBox = document.getElementById("login-tenant-select-group");
+    var pinLabel  = document.getElementById("pin-label");
+
+    if (btnAdmin)  btnAdmin.classList.toggle("active", psRole === "admin");
+    if (btnTenant) btnTenant.classList.toggle("active", psRole === "tenant");
+
+    if (tenantSelBox) {
+      tenantSelBox.classList.toggle("hidden", psRole !== "tenant");
+    }
+
+    if (pinLabel) {
+      pinLabel.innerText = psRole === "admin"
+        ? "Enter 4-digit Admin PIN"
+        : "Enter 4-digit Tenant PIN";
+    }
   }
-}
 
-function _onClear() {
-  sCurrentPin = "";
-  _updateDots();
-  pinError.innerText = "";
-}
+  // Populate tenant selector dropdown on login screen
+  function populateTenantDropdown(pArrTenants) {
+    var sel = document.getElementById("login-tenant-select");
+    if (!sel) return;
+    sel.innerHTML = "";
 
-// ─── Verify PIN ───────────────────────────────────────────────────────────────
-function _verifyPin() {
-  if (_isPinCorrect(sCurrentPin)) {
-    _startSession();
-    _unlockAdmin();
-  } else {
-    // Wrong PIN feedback
-    sCurrentPin = "";
+    if (!pArrTenants || pArrTenants.length === 0) {
+      var opt = document.createElement("option");
+      opt.value = "";
+      opt.innerText = "No tenants found (Default PIN: 1234)";
+      sel.appendChild(opt);
+      return;
+    }
+
+    pArrTenants.forEach(function (t) {
+      var opt = document.createElement("option");
+      opt.value = t.tenant_id;
+      opt.innerText = t.name + " (" + (t.room || "Room") + ")";
+      sel.appendChild(opt);
+    });
+  }
+
+  // ── Keypad Actions ─────────────────────────────────────────────────────────
+  function _onKeyPress(pDigit) {
+    if (_sCurrentInputPin.length >= 4) return;
+    _sCurrentInputPin += pDigit;
+    var errEl = document.getElementById("pin-error");
+    if (errEl) errEl.innerText = "";
     _updateDots();
-    pinError.innerText = "Incorrect PIN. Please try again.";
-    pinCard.classList.add("pin-shake");
-    setTimeout(function () { pinCard.classList.remove("pin-shake"); }, 400);
-  }
-}
 
-// ─── Unlock: hide lock screen, show app ───────────────────────────────────────
-function _unlockAdmin() {
-  lockScreen.classList.add("hidden");
-}
-
-// ─── Lock: clear session, show lock screen ────────────────────────────────────
-function lockApp() {
-  _clearSession();
-  sCurrentPin = "";
-  _updateDots();
-  pinError.innerText = "";
-  lockScreen.classList.remove("hidden");
-}
-
-// ─── Keyboard support ─────────────────────────────────────────────────────────
-document.addEventListener("keydown", function (e) {
-  if (lockScreen.classList.contains("hidden")) return;
-  if (e.key >= "0" && e.key <= "9") { _onKeyPress(e.key); }
-  else if (e.key === "Backspace")    { _onDelete(); }
-  else if (e.key === "Escape")       { _onClear(); }
-});
-
-// ─── Wire up keypad buttons ───────────────────────────────────────────────────
-document.querySelectorAll(".pin-key").forEach(function (btn) {
-  btn.addEventListener("click", function () {
-    var sDigit  = btn.getAttribute("data-digit");
-    var sAction = btn.getAttribute("data-action");
-    if (sDigit  !== null) { _onKeyPress(sDigit); }
-    if (sAction === "del")   { _onDelete(); }
-    if (sAction === "clear") { _onClear(); }
-  });
-});
-
-// ─── Change PIN modal wiring ──────────────────────────────────────────────────
-var btnChangePinNav   = document.getElementById("btn-change-pin");
-var modalChangePin    = document.getElementById("modal-change-pin");
-var btnClosePinModal  = document.getElementById("btn-close-pin-modal");
-var btnCancelPinModal = document.getElementById("btn-cancel-pin-modal");
-var btnSaveNewPin     = document.getElementById("btn-save-new-pin");
-
-btnChangePinNav.addEventListener("click", function () {
-  document.getElementById("input-current-pin").value = "";
-  document.getElementById("input-new-pin").value     = "";
-  document.getElementById("input-confirm-pin").value = "";
-  modalChangePin.classList.remove("hidden");
-});
-
-function _closePinModal() {
-  modalChangePin.classList.add("hidden");
-}
-
-btnClosePinModal .addEventListener("click", _closePinModal);
-btnCancelPinModal.addEventListener("click", _closePinModal);
-
-btnSaveNewPin.addEventListener("click", function () {
-  var sCurrent = document.getElementById("input-current-pin").value.trim();
-  var sNew     = document.getElementById("input-new-pin").value.trim();
-  var sConfirm = document.getElementById("input-confirm-pin").value.trim();
-
-  if (!_isPinCorrect(sCurrent)) {
-    alert("Current PIN is incorrect.");
-    return;
-  }
-  if (!/^\d{4}$/.test(sNew)) {
-    alert("New PIN must be exactly 4 digits.");
-    return;
-  }
-  if (sNew !== sConfirm) {
-    alert("New PIN and Confirm PIN do not match.");
-    return;
+    if (_sCurrentInputPin.length === 4) {
+      _verifyLogin();
+    }
   }
 
-  localStorage.setItem(STORAGE_KEY_PIN, _hashPin(sNew));
-  _closePinModal();
-  alert("✅ PIN changed successfully!");
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// INITIALISE AUTH on page load
-// ═══════════════════════════════════════════════════════════════════════════════
-(function () {
-  // Tenant share links → skip PIN, go straight to read-only portal
-  if (_isTenantShareLink()) {
-    lockScreen.classList.add("hidden");
-    return;
+  function _onDelete() {
+    if (_sCurrentInputPin.length > 0) {
+      _sCurrentInputPin = _sCurrentInputPin.slice(0, -1);
+      _updateDots();
+      var errEl = document.getElementById("pin-error");
+      if (errEl) errEl.innerText = "";
+    }
   }
 
-  // Valid admin session → auto-unlock
-  if (_isSessionValid()) {
-    lockScreen.classList.add("hidden");
-    return;
+  function _onClear() {
+    _sCurrentInputPin = "";
+    _updateDots();
+    var errEl = document.getElementById("pin-error");
+    if (errEl) errEl.innerText = "";
   }
 
-  // Show PIN screen (default: PIN lock is visible on load via no .hidden class)
+  // ── Verification ───────────────────────────────────────────────────────────
+  function _verifyLogin() {
+    var pinCard = document.getElementById("pin-card");
+    var errEl   = document.getElementById("pin-error");
+
+    if (_sSelectedRole === "admin") {
+      if (_isAdminPinCorrect(_sCurrentInputPin)) {
+        _startSession("admin", null);
+        _unlockUI();
+      } else {
+        _onWrongPin();
+      }
+    } else {
+      // Tenant login
+      var sel = document.getElementById("login-tenant-select");
+      var sTenantId = sel ? sel.value : null;
+
+      if (!sTenantId) {
+        if (errEl) errEl.innerText = "Please select your name/room first.";
+        _sCurrentInputPin = "";
+        _updateDots();
+        return;
+      }
+
+      var objTenant = (typeof app !== "undefined" && app.arrTenants)
+        ? app.arrTenants.find(function (t) { return t.tenant_id === sTenantId; })
+        : null;
+
+      var sExpectedHash = objTenant && objTenant.pin_hash
+        ? objTenant.pin_hash
+        : hashPin(DEFAULT_PIN);
+
+      if (hashPin(_sCurrentInputPin) === sExpectedHash) {
+        _startSession("tenant", sTenantId);
+        _unlockUI();
+
+        // Prompt tenant to change default PIN if it's still 1234
+        if (sExpectedHash === hashPin(DEFAULT_PIN)) {
+          setTimeout(function () {
+            alert("⚠️ Welcome! Your default PIN is 1234. Please click the 🔒 icon in the header to change your PIN.");
+          }, 300);
+        }
+      } else {
+        _onWrongPin();
+      }
+    }
+  }
+
+  function _onWrongPin() {
+    var pinCard = document.getElementById("pin-card");
+    var errEl   = document.getElementById("pin-error");
+    _sCurrentInputPin = "";
+    _updateDots();
+    if (errEl) errEl.innerText = "Incorrect PIN. Default PIN is 1234.";
+    if (pinCard) {
+      pinCard.classList.add("pin-shake");
+      setTimeout(function () { pinCard.classList.remove("pin-shake"); }, 400);
+    }
+  }
+
+  function _unlockUI() {
+    var lockScreen = document.getElementById("pin-lock-screen");
+    if (lockScreen) lockScreen.classList.add("hidden");
+
+    if (typeof app !== "undefined" && typeof app.onAuthSuccess === "function") {
+      app.onAuthSuccess(_sLoggedInRole, _sLoggedInTenantId);
+    }
+  }
+
+  function logout() {
+    _clearSession();
+    _sCurrentInputPin = "";
+    _updateDots();
+    var lockScreen = document.getElementById("pin-lock-screen");
+    if (lockScreen) lockScreen.classList.remove("hidden");
+
+    if (typeof app !== "undefined" && app.arrTenants) {
+      populateTenantDropdown(app.arrTenants);
+    }
+
+    if (typeof app !== "undefined" && typeof app.onLogout === "function") {
+      app.onLogout();
+    }
+  }
+
+  // ── Init & Event Wiring ────────────────────────────────────────────────────
+  function init() {
+    var btnAdmin  = document.getElementById("login-role-admin");
+    var btnTenant = document.getElementById("login-role-tenant");
+
+    if (btnAdmin)  btnAdmin.addEventListener("click",  function () { _setRoleUI("admin"); });
+    if (btnTenant) btnTenant.addEventListener("click", function () { _setRoleUI("tenant"); });
+
+    // Keypad listeners
+    document.querySelectorAll(".pin-key").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var sDigit  = btn.getAttribute("data-digit");
+        var sAction = btn.getAttribute("data-action");
+        if (sDigit  !== null) { _onKeyPress(sDigit); }
+        if (sAction === "del")   { _onDelete(); }
+        if (sAction === "clear") { _onClear(); }
+      });
+    });
+
+    // Keyboard support
+    document.addEventListener("keydown", function (e) {
+      var lockScreen = document.getElementById("pin-lock-screen");
+      if (!lockScreen || lockScreen.classList.contains("hidden")) return;
+      if (e.key >= "0" && e.key <= "9") { _onKeyPress(e.key); }
+      else if (e.key === "Backspace")    { _onDelete(); }
+      else if (e.key === "Escape")       { _onClear(); }
+    });
+
+    // Wire Change PIN modal
+    _setupChangePinModal();
+
+    // Check saved session
+    if (_isSessionValid()) {
+      _sLoggedInRole     = localStorage.getItem(STORAGE_KEY_AUTH_ROLE) || "admin";
+      _sLoggedInTenantId = localStorage.getItem(STORAGE_KEY_AUTH_TENANT) || null;
+
+      // Ensure lock screen is hidden
+      var lockScreen = document.getElementById("pin-lock-screen");
+      if (lockScreen) lockScreen.classList.add("hidden");
+    } else {
+      _clearSession();
+      _setRoleUI("admin");
+    }
+  }
+
+  // ── Change PIN Modal Wiring ────────────────────────────────────────────────
+  function _setupChangePinModal() {
+    var btnNavPin       = document.getElementById("btn-change-pin");
+    var modal           = document.getElementById("modal-change-pin");
+    var btnClose        = document.getElementById("btn-close-pin-modal");
+    var btnCancel       = document.getElementById("btn-cancel-pin-modal");
+    var btnSave         = document.getElementById("btn-save-new-pin");
+
+    if (btnNavPin) {
+      btnNavPin.addEventListener("click", function () {
+        document.getElementById("input-current-pin").value = "";
+        document.getElementById("input-new-pin").value     = "";
+        document.getElementById("input-confirm-pin").value = "";
+        modal.classList.remove("hidden");
+      });
+    }
+
+    function _closeModal() { if (modal) modal.classList.add("hidden"); }
+    if (btnClose)  btnClose.addEventListener("click",  _closeModal);
+    if (btnCancel) btnCancel.addEventListener("click", _closeModal);
+
+    if (btnSave) {
+      btnSave.addEventListener("click", async function () {
+        var sCurrent = document.getElementById("input-current-pin").value.trim();
+        var sNew     = document.getElementById("input-new-pin").value.trim();
+        var sConfirm = document.getElementById("input-confirm-pin").value.trim();
+
+        if (!/^\d{4}$/.test(sNew)) {
+          alert("New PIN must be exactly 4 digits.");
+          return;
+        }
+        if (sNew !== sConfirm) {
+          alert("New PIN and Confirm PIN do not match.");
+          return;
+        }
+
+        if (_sLoggedInRole === "admin") {
+          if (!_isAdminPinCorrect(sCurrent)) {
+            alert("Current Admin PIN is incorrect.");
+            return;
+          }
+          localStorage.setItem(STORAGE_KEY_ADMIN_PIN, hashPin(sNew));
+          if (typeof googleSheetsService !== "undefined" && googleSheetsService.bIsConnected) {
+            await googleSheetsService.updateAdminConfig({ admin_pin_hash: hashPin(sNew) });
+          }
+          _closeModal();
+          alert("✅ Admin PIN updated successfully & synced to Google Sheet!");
+        } else if (_sLoggedInRole === "tenant" && _sLoggedInTenantId) {
+
+          var objTenant = (typeof app !== "undefined" && app.arrTenants)
+            ? app.arrTenants.find(function (t) { return t.tenant_id === _sLoggedInTenantId; })
+            : null;
+
+          var sExpectedHash = objTenant && objTenant.pin_hash ? objTenant.pin_hash : hashPin(DEFAULT_PIN);
+          if (hashPin(sCurrent) !== sExpectedHash) {
+            alert("Current PIN is incorrect.");
+            return;
+          }
+
+          if (objTenant) {
+            objTenant.pin_hash = hashPin(sNew);
+            if (typeof app !== "undefined" && typeof app._saveTenant === "function") {
+              await app._saveTenant(objTenant);
+            }
+          }
+          _closeModal();
+          alert("✅ Your PIN updated successfully!");
+        }
+      });
+    }
+  }
+
+  // ── Public API ──────────────────────────────────────────────────────────────
+  return {
+    init:                   init,
+    logout:                 logout,
+    populateTenantDropdown: populateTenantDropdown,
+    getLoggedInRole:        function () { return _sLoggedInRole; },
+    getLoggedInTenantId:    function () { return _sLoggedInTenantId; },
+    isLoggedIn:             function () { return _sLoggedInRole !== null; }
+  };
+
 })();
+
+window.addEventListener("DOMContentLoaded", function () { pinAuth.init(); });

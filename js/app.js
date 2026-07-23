@@ -1,14 +1,15 @@
 /**
- * TenantRent — Main Application
- * Manages UI, CRUD operations, and real-time Google Sheets synchronisation.
- * Starts completely empty — no seed / demo data.
+ * TenantRent — Main Application Logic
+ * Supports Dual Role Mode:
+ *   - ADMIN: Full financial dashboard, stats, multi-tenant ledger, CRUD operations.
+ *   - TENANT: Strict isolated 1-tenant passbook portal.
  */
 
 var TenantRentApp = /** @class */ (function () {
   function TenantRentApp() {
-    this.arrTenants      = [];
-    this.sActiveTenantId = null;
-    this.bIsTenantView   = false;
+    this.arrTenants        = [];
+    this.sActiveTenantId   = null;
+    this.bIsTenantView     = false;
     this.sEditingRecordId  = null;
     this.sEditingTenantId  = null;
     this.activeReceiptRecord = null;
@@ -21,16 +22,38 @@ var TenantRentApp = /** @class */ (function () {
   // INITIALISATION
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype._init = async function () {
-    // 1. Load from LocalStorage cache first (instant render)
+    var self = this;
+
+    // 1. Load from LocalStorage cache first
     this.arrTenants = storageService.getTenants();
 
     // 2. If Google Sheets is connected, fetch live data
     if (googleSheetsService.bIsConnected) {
-      var arrLive = await googleSheetsService.fetchAll();
-      if (arrLive !== null) {
-        this.arrTenants = arrLive;
-        storageService.saveTenants(this.arrTenants);
+      var jsonLive = await googleSheetsService.fetchAll();
+      if (jsonLive !== null) {
+        if (Array.isArray(jsonLive.data)) {
+          this.arrTenants = jsonLive.data;
+          storageService.saveTenants(this.arrTenants);
+        }
+        if (jsonLive.admin_config) {
+          if (jsonLive.admin_config.admin_pin_hash && typeof STORAGE_KEY_ADMIN_PIN !== "undefined") {
+            localStorage.setItem(STORAGE_KEY_ADMIN_PIN, jsonLive.admin_config.admin_pin_hash);
+          }
+          if (jsonLive.admin_config.water_formula_type && typeof STORAGE_KEY_WATER_FORMULA !== "undefined") {
+            var cfg = {
+              sType: jsonLive.admin_config.water_formula_type,
+              fDivisor: parseFloat(jsonLive.admin_config.water_formula_divisor) || 2
+            };
+            localStorage.setItem(STORAGE_KEY_WATER_FORMULA, JSON.stringify(cfg));
+          }
+        }
       }
+    }
+
+
+    // Populate login screen dropdown
+    if (typeof pinAuth !== "undefined") {
+      pinAuth.populateTenantDropdown(this.arrTenants);
     }
 
     // 3. Set active tenant
@@ -38,29 +61,59 @@ var TenantRentApp = /** @class */ (function () {
       this.sActiveTenantId = this.arrTenants[0].tenant_id;
     }
 
-    // 4. Check URL hash for tenant share links
-    this._parseUrlHash();
-
-    // 5. Wire up UI events
+    // 4. Wire up UI events
     this._setupEvents();
 
-    // 6. Render
-    this._render();
+    // 5. If already authenticated via session, apply role UI
+    if (typeof pinAuth !== "undefined" && pinAuth.isLoggedIn()) {
+      this.onAuthSuccess(pinAuth.getLoggedInRole(), pinAuth.getLoggedInTenantId());
+    } else {
+      this._render();
+    }
 
     if (window.feather) feather.replace();
   };
 
-  TenantRentApp.prototype._parseUrlHash = function () {
-    var sHash = window.location.hash;
-    if (!sHash.startsWith("#tenant/")) return;
-    var sKey = sHash.replace("#tenant/", "").trim();
-    var objMatch = this.arrTenants.find(function (t) {
-      return t.tenant_id === sKey || t.share_key === sKey;
-    });
-    if (objMatch) {
-      this.sActiveTenantId = objMatch.tenant_id;
-      this.bIsTenantView   = true;
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AUTH ROLE HANDLERS
+  // ═══════════════════════════════════════════════════════════════════════════
+  TenantRentApp.prototype.onAuthSuccess = function (psRole, psTenantId) {
+    var viewPill    = document.getElementById("view-toggle-pill");
+    var btnGS       = document.getElementById("btn-gsheets-sync");
+    var portalGroup = document.getElementById("portal-controls-group");
+    var roleBadge   = document.getElementById("user-role-badge");
+
+    if (psRole === "admin") {
+      this.bIsTenantView = false;
+      if (viewPill)    { viewPill.classList.remove("hidden");    viewPill.style.display = ""; }
+      if (btnGS)       { btnGS.classList.remove("hidden");       btnGS.style.display = ""; }
+      if (portalGroup) { portalGroup.classList.remove("hidden"); portalGroup.style.display = ""; }
+      if (roleBadge)   roleBadge.innerText = "Admin Dashboard";
+
+      if (this.arrTenants.length > 0 && !this.sActiveTenantId) {
+        this.sActiveTenantId = this.arrTenants[0].tenant_id;
+      }
+      this._setMode(false);
+    } else if (psRole === "tenant") {
+      this.bIsTenantView = true;
+      if (psTenantId) this.sActiveTenantId = psTenantId;
+
+      if (viewPill)    { viewPill.classList.add("hidden");    viewPill.style.display = "none"; }
+      if (btnGS)       { btnGS.classList.add("hidden");       btnGS.style.display = "none"; }
+      if (portalGroup) { portalGroup.classList.add("hidden"); portalGroup.style.display = "none"; }
+
+      var objT = this.arrTenants.find(function (t) { return t.tenant_id === psTenantId; });
+      if (roleBadge) {
+        roleBadge.innerText = objT ? "Tenant: " + objT.name : "Tenant Portal";
+      }
+
+      this._setMode(true);
     }
+  };
+
+  TenantRentApp.prototype.onLogout = function () {
+    this.sActiveTenantId = null;
+    this._render();
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -69,12 +122,17 @@ var TenantRentApp = /** @class */ (function () {
   TenantRentApp.prototype._setupEvents = function () {
     var self = this;
 
-    // View toggle
+    // View toggle (Admin mode only)
     document.getElementById("btn-mode-admin") .addEventListener("click", function () { self._setMode(false); });
     document.getElementById("btn-mode-tenant").addEventListener("click", function () { self._setMode(true);  });
 
     // Theme
     document.getElementById("btn-theme-toggle").addEventListener("click", function () { self._toggleTheme(); });
+
+    // Logout
+    document.getElementById("btn-logout").addEventListener("click", function () {
+      if (typeof pinAuth !== "undefined") pinAuth.logout();
+    });
 
     // Google Sheets sync modal
     document.getElementById("btn-gsheets-sync").addEventListener("click",        function () { self._openGSModal(); });
@@ -95,56 +153,14 @@ var TenantRentApp = /** @class */ (function () {
         if (arrLive !== null) {
           self.arrTenants = arrLive;
           storageService.saveTenants(self.arrTenants);
+          if (typeof pinAuth !== "undefined") pinAuth.populateTenantDropdown(self.arrTenants);
           if (self.arrTenants.length > 0) self.sActiveTenantId = self.arrTenants[0].tenant_id;
           self._render();
-          alert("✅ Connected! Data loaded from Google Sheets.");
+          alert("✅ Connected! Live data loaded from Google Sheets.");
         } else {
-          alert("✅ Connected! The sheet is empty — add your first tenant below.");
+          alert("✅ Connected! Sheet is empty — add your first tenant below.");
         }
       }
-    });
-
-    // Excel dropdown
-    var btnExcel = document.getElementById("btn-excel-menu");
-    var ddExcel  = document.getElementById("excel-dropdown");
-    btnExcel.addEventListener("click", function (e) { e.stopPropagation(); ddExcel.classList.toggle("show"); });
-    document.addEventListener("click", function () { ddExcel.classList.remove("show"); });
-    document.getElementById("btn-export-excel").addEventListener("click", function () {
-      excelService.exportToExcel(self.arrTenants);
-    });
-    var fileInput = document.getElementById("file-excel-input");
-    document.getElementById("btn-import-excel").addEventListener("click", function () { fileInput.click(); });
-    fileInput.addEventListener("change", function (e) {
-      if (e.target.files && e.target.files[0]) {
-        excelService.parseExcelFile(e.target.files[0], function (arrImported) {
-          if (arrImported && arrImported.length > 0) {
-            self.arrTenants = arrImported;
-            self.sActiveTenantId = self.arrTenants[0].tenant_id;
-            self._saveAll();
-            self._render();
-            alert("Imported " + arrImported.length + " sheet(s)!");
-          }
-        }, function (sErr) { alert("Import error: " + sErr); });
-      }
-    });
-
-    // Supabase modal (kept for optional use)
-    document.getElementById("btn-cloud-sync").addEventListener("click",       function () { self._openCloudModal(); });
-    document.getElementById("btn-close-sync-modal").addEventListener("click", function () { self._closeCloudModal(); });
-    document.getElementById("btn-save-cloud").addEventListener("click", function () {
-      storageService.saveSupabaseConfig(
-        document.getElementById("input-supabase-url").value,
-        document.getElementById("input-supabase-key").value
-      );
-      self._closeCloudModal();
-      self._render();
-      alert("Supabase settings saved!");
-    });
-    document.getElementById("btn-disconnect-cloud").addEventListener("click", function () {
-      storageService.saveSupabaseConfig("", "");
-      self._closeCloudModal();
-      self._render();
-      alert("Supabase disconnected.");
     });
 
     // Tenant modal
@@ -169,8 +185,9 @@ var TenantRentApp = /** @class */ (function () {
       self._renderBillingTable(e.target.value);
     });
 
-    // Tenant portal select
+    // Tenant portal select (Admin mode only)
     document.getElementById("select-portal-tenant").addEventListener("change", function (e) {
+      if (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "tenant") return; // prevent tenant from switching
       self.sActiveTenantId = e.target.value;
       self._render();
     });
@@ -189,29 +206,27 @@ var TenantRentApp = /** @class */ (function () {
   // ═══════════════════════════════════════════════════════════════════════════
   // DATA PERSISTENCE HELPERS
   // ═══════════════════════════════════════════════════════════════════════════
-
-  /** Save full tenant list to LocalStorage (used after import / GS fetch). */
   TenantRentApp.prototype._saveAll = function () {
     storageService.saveTenants(this.arrTenants);
+    if (typeof pinAuth !== "undefined") pinAuth.populateTenantDropdown(this.arrTenants);
   };
 
-  /** Upsert one tenant to LocalStorage AND Google Sheets. */
   TenantRentApp.prototype._saveTenant = async function (pTenant) {
     storageService.saveTenants(this.arrTenants);
+    if (typeof pinAuth !== "undefined") pinAuth.populateTenantDropdown(this.arrTenants);
     if (googleSheetsService.bIsConnected) {
       await googleSheetsService.upsertTenant(pTenant);
     }
   };
 
-  /** Delete one tenant from LocalStorage AND Google Sheets. */
   TenantRentApp.prototype._deleteTenantRemote = async function (psTenantId) {
     storageService.saveTenants(this.arrTenants);
+    if (typeof pinAuth !== "undefined") pinAuth.populateTenantDropdown(this.arrTenants);
     if (googleSheetsService.bIsConnected) {
       await googleSheetsService.deleteTenant(psTenantId);
     }
   };
 
-  /** Upsert one billing record to LocalStorage AND Google Sheets. */
   TenantRentApp.prototype._saveBilling = async function (pRecord) {
     storageService.saveTenants(this.arrTenants);
     if (googleSheetsService.bIsConnected) {
@@ -219,7 +234,6 @@ var TenantRentApp = /** @class */ (function () {
     }
   };
 
-  /** Delete one billing record from LocalStorage AND Google Sheets. */
   TenantRentApp.prototype._deleteBillingRemote = async function (psRecordId) {
     storageService.saveTenants(this.arrTenants);
     if (googleSheetsService.bIsConnected) {
@@ -228,16 +242,28 @@ var TenantRentApp = /** @class */ (function () {
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // UI MODE
+  // UI MODE & THEME
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype._setMode = function (pbTenant) {
+    var bIsTenantRole = (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "tenant");
+    if (bIsTenantRole) {
+      pbTenant = true; // Tenants are strictly forced to Tenant View only!
+    }
+
     this.bIsTenantView = pbTenant;
-    document.getElementById("btn-mode-admin") .classList.toggle("active", !pbTenant);
-    document.getElementById("btn-mode-tenant").classList.toggle("active",  pbTenant);
-    document.getElementById("view-admin")         .classList.toggle("hidden",  pbTenant);
-    document.getElementById("view-tenant-portal") .classList.toggle("hidden", !pbTenant);
+    var btnAdmin  = document.getElementById("btn-mode-admin");
+    var btnTenant = document.getElementById("btn-mode-tenant");
+    var viewAdmin = document.getElementById("view-admin");
+    var viewPort  = document.getElementById("view-tenant-portal");
+
+    if (btnAdmin)  btnAdmin.classList.toggle("active", !pbTenant);
+    if (btnTenant) btnTenant.classList.toggle("active",  pbTenant);
+    if (viewAdmin) viewAdmin.classList.toggle("hidden",  pbTenant);
+    if (viewPort)  viewPort.classList.toggle("hidden", !pbTenant);
+
     this._render();
   };
+
 
   TenantRentApp.prototype._toggleTheme = function () {
     var html = document.documentElement;
@@ -255,22 +281,12 @@ var TenantRentApp = /** @class */ (function () {
     document.getElementById("modal-gsheets-sync").classList.add("hidden");
   };
 
-  TenantRentApp.prototype._openCloudModal = function () {
-    var cfg = storageService.getSupabaseConfig();
-    document.getElementById("input-supabase-url").value = cfg.sUrl || "";
-    document.getElementById("input-supabase-key").value = cfg.sAnonKey || "";
-    document.getElementById("modal-cloud-sync").classList.remove("hidden");
-  };
-  TenantRentApp.prototype._closeCloudModal = function () {
-    document.getElementById("modal-cloud-sync").classList.add("hidden");
-  };
-
   // ═══════════════════════════════════════════════════════════════════════════
-  // TENANT MODAL
+  // TENANT MODAL (Admin Only)
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype._openTenantModal = function (psTenantId) {
     this.sEditingTenantId = psTenantId || null;
-    document.getElementById("modal-tenant-title").innerText = psTenantId ? "Edit Tenant" : "Add New Tenant";
+    document.getElementById("modal-tenant-title").innerText = psTenantId ? "Edit Tenant Profile" : "Add New Tenant Profile";
     var form = document.getElementById("form-tenant");
     form.reset();
     document.getElementById("input-meter-rate").value = "8";
@@ -336,9 +352,6 @@ var TenantRentApp = /** @class */ (function () {
     this._render();
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // DELETE TENANT
-  // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype.deleteTenant = async function (psTenantId) {
     if (confirm("Delete this tenant and ALL their billing records? This cannot be undone.")) {
       this.arrTenants = this.arrTenants.filter(function (t) { return t.tenant_id !== psTenantId; });
@@ -349,7 +362,7 @@ var TenantRentApp = /** @class */ (function () {
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BILLING MODAL
+  // BILLING MODAL (Admin Only)
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype._openBillingModal = function (psRecordId) {
     var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === this.sActiveTenantId; }.bind(this));
@@ -380,7 +393,6 @@ var TenantRentApp = /** @class */ (function () {
         document.getElementById("input-remark")          .value = objRec.notes;
       }
     } else {
-      // Auto-suggest from last record
       var arrRecs = objTenant.billing_records || [];
       var sLastTo  = new Date().toISOString().slice(0, 10);
       var fLastElec  = 0, fLastWater = 0;
@@ -411,33 +423,26 @@ var TenantRentApp = /** @class */ (function () {
     var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === this.sActiveTenantId; }.bind(this));
     var mRate = objTenant ? (objTenant.meter_rate || 8) : 8;
 
-    // ── Electricity: always current − previous ────────────────────────────────
     var fEB = parseFloat(document.getElementById("input-elec-before") .value) || 0;
     var fEC = parseFloat(document.getElementById("input-elec-current").value) || 0;
     var fEU = Math.max(0, fEC - fEB);
     document.getElementById("input-elec-unit").value = fEU.toFixed(2);
 
-    // ── Water: use the saved formula from waterFormula module ─────────────────
     var fWB = parseFloat(document.getElementById("input-water-before") .value) || 0;
     var fWC = parseFloat(document.getElementById("input-water-current").value) || 0;
 
-    // Only auto-compute if readings changed (prev/curr inputs triggered the event)
-    // Allow manual override: if user typed directly into water-unit field, respect it
     var elWaterUnit = document.getElementById("input-water-unit");
     var bWaterManual = (document.activeElement === elWaterUnit);
     var fWU;
     if (bWaterManual) {
-      // User is typing units directly → keep their value
       fWU = parseFloat(elWaterUnit.value) || 0;
     } else {
-      // Auto-compute using saved formula
       fWU = (typeof waterFormula !== "undefined")
         ? waterFormula.compute(fWC, fWB)
         : Math.max(0, fWC - fWB);
       elWaterUnit.value = fWU.toFixed(2);
     }
 
-    // Show formula label in the calc box
     var sFormulaLabel = (typeof waterFormula !== "undefined") ? waterFormula.getLabel() : "Curr − Prev";
     var elFormulaInfo = document.getElementById("calc-water-formula");
     if (elFormulaInfo) elFormulaInfo.innerText = "Water formula: " + sFormulaLabel;
@@ -455,7 +460,6 @@ var TenantRentApp = /** @class */ (function () {
     document.getElementById("calc-rent-display") .innerText = formatCurrency(mRent);
     document.getElementById("input-total-bill")  .value     = mTotal.toFixed(2);
     document.getElementById("input-balance")     .value     = mBal.toFixed(2);
-
   };
 
   TenantRentApp.prototype._handleSaveBilling = async function (pEvent) {
@@ -521,9 +525,6 @@ var TenantRentApp = /** @class */ (function () {
     this._render();
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // DELETE BILLING RECORD
-  // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype.deleteRecord = async function (psRecordId) {
     var self = this;
     var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === self.sActiveTenantId; });
@@ -536,7 +537,7 @@ var TenantRentApp = /** @class */ (function () {
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // RECEIPT
+  // RECEIPT & WHATSAPP
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype.openReceipt = function (psRecordId) {
     var self = this;
@@ -548,7 +549,28 @@ var TenantRentApp = /** @class */ (function () {
     this.activeReceiptRecord = objRec;
     this.activeReceiptTenant = objTenant;
 
-    document.getElementById("receipt-printable-area").innerHTML = "\n      <div class=\"receipt-box\">\n        <div class=\"receipt-header\">\n          <h2>RENT & UTILITY STATEMENT</h2>\n          <p><strong>" + objTenant.room + "</strong> \u2014 " + objTenant.name + "</p>\n          <p><small>Period: " + formatDateDisplay(objRec.period_from) + " to " + formatDateDisplay(objRec.period_to) + "</small></p>\n        </div>\n        <table class=\"receipt-table\">\n          <tr><td>Electricity Reading:</td><td style=\"text-align:right\">" + objRec.elec_prev + " \u2192 " + objRec.elec_curr + " (<strong>" + objRec.elec_units + " units</strong>)</td></tr>\n          <tr><td>Water Reading:</td><td style=\"text-align:right\">" + objRec.water_prev + " \u2192 " + objRec.water_curr + " (<strong>" + objRec.water_units + " units</strong>)</td></tr>\n          <tr><td>Meter Charges (@ \u20b9" + objRec.unit_rate + "/unit):</td><td style=\"text-align:right\">" + formatCurrency(objRec.meter_charges) + "</td></tr>\n          <tr><td>Monthly Rent:</td><td style=\"text-align:right\">" + formatCurrency(objRec.rent) + "</td></tr>\n          " + (objRec.extra > 0 ? "<tr><td>Extra Charges:</td><td style=\"text-align:right\">" + formatCurrency(objRec.extra) + "</td></tr>" : "") + "\n          <tr class=\"total-row\"><td><strong>TOTAL DUE:</strong></td><td style=\"text-align:right\"><strong>" + formatCurrency(objRec.total_due) + "</strong></td></tr>\n          <tr><td>Paid Amount:</td><td style=\"text-align:right;color:var(--success)\">" + formatCurrency(objRec.paid_amount) + " (" + (objRec.paid_date || "Pending") + ")</td></tr>\n          <tr><td>Balance:</td><td style=\"text-align:right;color:var(--danger);font-weight:700\">" + formatCurrency(objRec.balance) + "</td></tr>\n        </table>\n        <div style=\"margin-top:1rem;padding:0.75rem;background:var(--bg-surface);border-radius:var(--radius-md);text-align:center;font-size:0.8rem\">\n          <p><strong>Status: " + objRec.payment_status.toUpperCase() + "</strong></p>\n          <p>" + (objRec.notes ? "Note: " + objRec.notes : "Thank you for your prompt payment!") + "</p>\n        </div>\n      </div>";
+    document.getElementById("receipt-printable-area").innerHTML =
+      "<div class=\"receipt-box\">" +
+        "<div class=\"receipt-header\">" +
+          "<h2>RENT & UTILITY STATEMENT</h2>" +
+          "<p><strong>" + objTenant.room + "</strong> \u2014 " + objTenant.name + "</p>" +
+          "<p><small>Period: " + formatDateDisplay(objRec.period_from) + " to " + formatDateDisplay(objRec.period_to) + "</small></p>" +
+        "</div>" +
+        "<table class=\"receipt-table\">" +
+          "<tr><td>Electricity Reading:</td><td style=\"text-align:right\">" + objRec.elec_prev + " \u2192 " + objRec.elec_curr + " (<strong>" + objRec.elec_units + " units</strong>)</td></tr>" +
+          "<tr><td>Water Reading:</td><td style=\"text-align:right\">" + objRec.water_prev + " \u2192 " + objRec.water_curr + " (<strong>" + objRec.water_units + " units</strong>)</td></tr>" +
+          "<tr><td>Meter Charges (@ \u20b9" + objRec.unit_rate + "/unit):</td><td style=\"text-align:right\">" + formatCurrency(objRec.meter_charges) + "</td></tr>" +
+          "<tr><td>Monthly Rent:</td><td style=\"text-align:right\">" + formatCurrency(objRec.rent) + "</td></tr>" +
+          (objRec.extra > 0 ? "<tr><td>Extra Charges:</td><td style=\"text-align:right\">" + formatCurrency(objRec.extra) + "</td></tr>" : "") +
+          "<tr class=\"total-row\"><td><strong>TOTAL DUE:</strong></td><td style=\"text-align:right\"><strong>" + formatCurrency(objRec.total_due) + "</strong></td></tr>" +
+          "<tr><td>Paid Amount:</td><td style=\"text-align:right;color:var(--success)\">" + formatCurrency(objRec.paid_amount) + " (" + (objRec.paid_date || "Pending") + ")</td></tr>" +
+          "<tr><td>Balance:</td><td style=\"text-align:right;color:var(--danger);font-weight:700\">" + formatCurrency(objRec.balance) + "</td></tr>" +
+        "</table>" +
+        "<div style=\"margin-top:1rem;padding:0.75rem;background:var(--bg-surface);border-radius:var(--radius-md);text-align:center;font-size:0.8rem\">" +
+          "<p><strong>Status: " + objRec.payment_status.toUpperCase() + "</strong></p>" +
+          "<p>" + (objRec.notes ? "Note: " + objRec.notes : "Thank you for your prompt payment!") + "</p>" +
+        "</div>" +
+      "</div>";
 
     document.getElementById("modal-receipt").classList.remove("hidden");
     if (window.feather) feather.replace();
@@ -588,6 +610,23 @@ var TenantRentApp = /** @class */ (function () {
   // RENDERING
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype._render = function () {
+    var bIsTenantRole = (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "tenant");
+
+    var viewPill    = document.getElementById("view-toggle-pill");
+    var btnGS       = document.getElementById("btn-gsheets-sync");
+    var portalGroup = document.getElementById("portal-controls-group");
+
+    if (bIsTenantRole) {
+      if (viewPill)    { viewPill.classList.add("hidden");    viewPill.style.display = "none"; }
+      if (btnGS)       { btnGS.classList.add("hidden");       btnGS.style.display = "none"; }
+      if (portalGroup) { portalGroup.classList.add("hidden"); portalGroup.style.display = "none"; }
+      this.bIsTenantView = true;
+    } else {
+      if (viewPill)    { viewPill.classList.remove("hidden");    viewPill.style.display = ""; }
+      if (btnGS)       { btnGS.classList.remove("hidden");       btnGS.style.display = ""; }
+      if (portalGroup) { portalGroup.classList.remove("hidden"); portalGroup.style.display = ""; }
+    }
+
     this._renderSyncBadges();
     this._renderStats();
     if (!this.bIsTenantView) {
@@ -600,11 +639,16 @@ var TenantRentApp = /** @class */ (function () {
     if (window.feather) feather.replace();
   };
 
+
   TenantRentApp.prototype._renderSyncBadges = function () {
-    var btnGS   = document.getElementById("btn-gsheets-sync");
-    var txtGS   = document.getElementById("gsheets-sync-text");
-    var btnSup  = document.getElementById("btn-cloud-sync");
-    var txtSup  = document.getElementById("sync-text");
+    var btnGS = document.getElementById("btn-gsheets-sync");
+    var txtGS = document.getElementById("gsheets-sync-text");
+    var bIsTenantRole = (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "tenant");
+
+    if (btnGS && bIsTenantRole) {
+      btnGS.classList.add("hidden");
+      return;
+    }
 
     if (googleSheetsService.bIsConnected) {
       if (btnGS) { btnGS.className = "btn btn-secondary"; btnGS.style.borderColor = "var(--success)"; }
@@ -613,15 +657,8 @@ var TenantRentApp = /** @class */ (function () {
       if (btnGS) { btnGS.className = "btn btn-outline"; btnGS.style.borderColor = ""; }
       if (txtGS) txtGS.innerText = "Google Sheets Sync";
     }
-
-    if (storageService.bIsCloudConnected) {
-      if (btnSup) { btnSup.className = "btn btn-secondary"; btnSup.style.borderColor = "var(--success)"; }
-      if (txtSup) txtSup.innerHTML = "<span style='color:var(--success)'>Cloud Synced</span>";
-    } else {
-      if (btnSup) { btnSup.className = "btn btn-outline"; btnSup.style.borderColor = ""; }
-      if (txtSup) txtSup.innerText = "Cloud Sync";
-    }
   };
+
 
   TenantRentApp.prototype._renderStats = function () {
     var iTenants = this.arrTenants.length;
@@ -677,11 +714,12 @@ var TenantRentApp = /** @class */ (function () {
         "<div class='meta-item'><span class='meta-label'>Base Monthly Rent</span><span class='meta-value'>" + formatCurrency(objTenant.base_rent) + "</span></div>" +
         "<div class='meta-item'><span class='meta-label'>Meter Rate</span><span class='meta-value'>₹" + (objTenant.meter_rate || 8) + "/unit</span></div>" +
       "</div>" +
-      "<div style='display:flex;gap:0.5rem'>" +
-        "<button class='btn btn-secondary' onclick=\"app._openTenantModal('" + objTenant.tenant_id + "')\"><i data-feather='edit-2'></i> Edit</button>" +
-        "<button class='btn btn-danger'    onclick=\"app.deleteTenant('" + objTenant.tenant_id + "')\"><i data-feather='trash-2'></i> Delete</button>" +
+      "<div style='display:flex;gap:0.75rem;align-items:center;margin-left:auto'>" +
+        "<button class='btn btn-outline' onclick=\"app._openTenantModal('" + objTenant.tenant_id + "')\"><i data-feather='edit'></i> Edit</button>" +
+        "<button class='btn btn-danger'  onclick=\"app.deleteTenant('" + objTenant.tenant_id + "')\"><i data-feather='trash-2'></i> Delete</button>" +
       "</div>";
   };
+
 
   TenantRentApp.prototype._renderBillingTable = function (psFilter) {
     var self = this;
@@ -708,7 +746,7 @@ var TenantRentApp = /** @class */ (function () {
     badge.innerText = arrRecs.length + " Entries";
 
     if (arrRecs.length === 0) {
-      tbody.innerHTML = "<tr><td colspan='10' style='text-align:center;padding:2.5rem;color:var(--text-muted)'>No billing records yet. Click <strong>Add Billing Month</strong> to add one.</td></tr>";
+      tbody.innerHTML = "<tr><td colspan='10' style='text-align:center;padding:2.5rem;color:var(--text-muted)'>No billing records yet. Click <strong>Add Monthly Bill</strong> to add one.</td></tr>";
       return;
     }
 
@@ -734,25 +772,33 @@ var TenantRentApp = /** @class */ (function () {
     });
   };
 
-  // ─── Tenant Portal (Read-Only) ────────────────────────────────────────────
+  // ─── Tenant Portal (Isolated View for logged-in tenant or Admin preview) ──────
   TenantRentApp.prototype._renderPortal = function () {
     var self = this;
+    var bIsTenantUser = (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "tenant");
 
     var sel = document.getElementById("select-portal-tenant");
-    sel.innerHTML = "";
-    this.arrTenants.forEach(function (t) {
-      var opt = document.createElement("option");
-      opt.value   = t.tenant_id;
-      opt.innerText = t.name + " (" + t.room + ")";
-      if (t.tenant_id === self.sActiveTenantId) opt.selected = true;
-      sel.appendChild(opt);
-    });
+    if (sel) {
+      sel.innerHTML = "";
+      this.arrTenants.forEach(function (t) {
+        var opt = document.createElement("option");
+        opt.value   = t.tenant_id;
+        opt.innerText = t.name + " (" + t.room + ")";
+        if (t.tenant_id === self.sActiveTenantId) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
 
-    var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === self.sActiveTenantId; }) || this.arrTenants[0];
+    var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === self.sActiveTenantId; });
+    if (!objTenant && this.arrTenants.length > 0) {
+      objTenant = this.arrTenants[0];
+      this.sActiveTenantId = objTenant.tenant_id;
+    }
+
     if (!objTenant) {
-      document.getElementById("portal-tenant-name").innerText = "No tenants";
-      document.getElementById("portal-room-name")  .innerText = "";
-      document.getElementById("latest-bill-container").innerHTML = "<p style='color:var(--text-muted)'>No data yet.</p>";
+      document.getElementById("portal-tenant-name").innerText = "Welcome!";
+      document.getElementById("portal-room-name")  .innerText = "No records found";
+      document.getElementById("latest-bill-container").innerHTML = "<p style='color:var(--text-muted)'>No billing details available yet.</p>";
       document.getElementById("tbody-tenant-history").innerHTML = "";
       return;
     }
@@ -780,22 +826,26 @@ var TenantRentApp = /** @class */ (function () {
     }
 
     var tbody = document.getElementById("tbody-tenant-history");
-    tbody.innerHTML = "";
+    if (tbody) tbody.innerHTML = "";
+
     arrRecs.slice().reverse().forEach(function (r) {
-      var sCls = r.payment_status === "Paid" ? "paid" : "pending";
+
+      var sCls = r.payment_status === "Paid" ? "paid" : (r.payment_status === "Pending" ? "pending" : "partial");
       var tr = document.createElement("tr");
       tr.innerHTML =
         "<td>" + formatDateDisplay(r.period_from) + " – " + formatDateDisplay(r.period_to) + "</td>" +
-        "<td>" + r.elec_units + " units</td><td>" + r.water_units + " units</td>" +
+        "<td>" + r.elec_units + " units</td>" +
+        "<td>" + r.water_units + " units</td>" +
         "<td>" + formatCurrency(r.meter_charges) + "</td>" +
         "<td>" + formatCurrency(r.rent) + "</td>" +
         "<td><strong>" + formatCurrency(r.total_due) + "</strong></td>" +
         "<td><span class='status-pill " + sCls + "'>" + r.payment_status + "</span></td>" +
         "<td>" + formatCurrency(r.paid_amount) + "</td>" +
-        "<td><button class='btn btn-secondary' style='padding:0.3rem 0.6rem;font-size:0.75rem' onclick=\"app.openReceipt('" + r.record_id + "')\"><i data-feather='eye'></i> View</button></td>";
+        "<td><button class='btn btn-secondary' style='padding:0.35rem 0.75rem;font-size:0.8rem;border-radius:8px' onclick=\"app.openReceipt('" + r.record_id + "')\"><i data-feather='eye'></i> Receipt</button></td>";
       tbody.appendChild(tr);
     });
   };
+
 
   return TenantRentApp;
 }());

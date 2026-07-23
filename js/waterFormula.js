@@ -124,8 +124,15 @@ var waterFormula = (function () {
 
     _objConfig = { sType: sNewType, fDivisor: fNewDiv };
     localStorage.setItem(STORAGE_KEY_WATER_FORMULA, JSON.stringify(_objConfig));
+    if (typeof googleSheetsService !== "undefined" && googleSheetsService.bIsConnected) {
+      googleSheetsService.updateAdminConfig({
+        water_formula_type: sNewType,
+        water_formula_divisor: fNewDiv
+      });
+    }
     _updateBadge();
     closeSettings();
+
 
     // Trigger recalc in the billing form if it's open
     if (typeof app !== "undefined" && typeof app._recalcBill === "function") {

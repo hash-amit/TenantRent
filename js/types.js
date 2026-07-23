@@ -1,21 +1,28 @@
 /**
  * TenantRent — Data Model Definitions & Utility Functions
- * No seed / demo data. App starts completely empty.
  */
 
 // ─── ID Generators ────────────────────────────────────────────────────────────
 function generateTenantId() {
-  // Format: T + timestamp suffix e.g. T1721234567890
   return "T" + Date.now();
 }
 
 function generateRecordId() {
-  // Format: R + timestamp suffix e.g. R1721234567890
   return "R" + Date.now();
 }
 
 function generateShareKey() {
   return "SK" + Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
+// Simple pin hash helper (consistent with pinAuth)
+function hashPin(psPin) {
+  var iHash = 0;
+  for (var i = 0; i < psPin.length; i++) {
+    iHash = ((iHash << 5) - iHash) + psPin.charCodeAt(i);
+    iHash |= 0;
+  }
+  return "h_" + Math.abs(iHash).toString(16);
 }
 
 // ─── Factory: create a blank tenant object ────────────────────────────────────
@@ -32,6 +39,7 @@ function createTenant(pOverrides) {
     meter_rate:     8,
     share_key:      generateShareKey(),
     status:         "Active",
+    pin_hash:       hashPin("1234"), // Default PIN is 1234 for all new tenants
     created_at:     new Date().toISOString(),
     billing_records: []
   };
@@ -79,9 +87,7 @@ function formatCurrency(pAmount) {
 
 function formatDateDisplay(pDateStr) {
   if (!pDateStr) return "—";
-  // Already in DD/MM/YYYY
   if (pDateStr.includes("/")) return pDateStr;
-  // YYYY-MM-DD → DD/MM/YYYY
   var arrP = pDateStr.split("-");
   if (arrP.length === 3) return arrP[2] + "/" + arrP[1] + "/" + arrP[0];
   return pDateStr;

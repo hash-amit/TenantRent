@@ -6,23 +6,20 @@
   <title>TenantRent — Smart Rent & Utility Manager</title>
   <meta name="description" content="Manage tenant rent, electricity bill units, water meter units, advance deposits, and shared bill receipts with zero domain cost." />
   
-  <!-- Fonts -->
+  <!-- Modern Font: Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
-  <!-- Feather Icons & SheetJS -->
-  <script src="https://unpkg.com/feather-icons"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <!-- Supabase JS Client (Option A Cloud Sync) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  
+  <!-- Feather Icons -->
+  <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
 
-  <!-- ── PIN LOCK SCREEN ─────────────────────────────────────────── -->
+  <!-- ── LANDING / DUAL-ROLE LOGIN SCREEN ─────────────────────────── -->
   <div id="pin-lock-screen">
     <div class="lock-brand">
       <div class="lock-logo">
@@ -33,11 +30,29 @@
         </svg>
       </div>
       <h1>TenantRent</h1>
-      <p>Enter your admin PIN to continue</p>
+      <p>Select your login type to access</p>
     </div>
 
     <div class="lock-card" id="pin-card">
-      <div class="lock-label" id="pin-label">Enter 4-digit PIN</div>
+      <!-- Role Selector: Admin vs Tenant -->
+      <div class="login-role-selector">
+        <button type="button" class="login-role-btn active" id="login-role-admin">
+          👑 Admin Login
+        </button>
+        <button type="button" class="login-role-btn" id="login-role-tenant">
+          👤 Tenant Login
+        </button>
+      </div>
+
+      <!-- Tenant Select Dropdown (shown only when Tenant Login is selected) -->
+      <div id="login-tenant-select-group" class="form-group hidden" style="width:100%;margin-bottom:0.25rem">
+        <label for="login-tenant-select" style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:4px;display:block">Select Your Room / Name:</label>
+        <select id="login-tenant-select" class="form-control" style="background:rgba(255,255,255,0.06);color:#fff;border-color:rgba(99,102,241,0.3)">
+          <!-- Dynamic options -->
+        </select>
+      </div>
+
+      <div class="lock-label" id="pin-label">Enter 4-digit Admin PIN</div>
 
       <div class="pin-dots" id="pin-dots">
         <div class="pin-dot" id="dot-0"></div>
@@ -69,7 +84,7 @@
   <div class="modal-overlay hidden" id="modal-change-pin">
     <div class="modal-container">
       <div class="modal-header">
-        <h3>🔐 Change Admin PIN</h3>
+        <h3>🔐 Change PIN</h3>
         <button class="btn-close" id="btn-close-pin-modal">&times;</button>
       </div>
       <div class="modal-body">
@@ -85,14 +100,15 @@
           <label for="input-confirm-pin">Confirm New PIN</label>
           <input type="password" id="input-confirm-pin" class="form-control" maxlength="4" placeholder="Confirm new PIN" />
         </div>
-        <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem">⚠️ Default PIN is <strong>1234</strong>. Change it immediately after first login.</p>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem">⚠️ Default PIN is <strong>1234</strong>. Please change it after your first login.</p>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btn-cancel-pin-modal">Cancel</button>
-        <button class="btn btn-primary" id="btn-save-new-pin">Change PIN</button>
+        <button class="btn btn-primary" id="btn-save-new-pin">Save New PIN</button>
       </div>
     </div>
   </div>
+
   <div id="app" class="app-container">
     <!-- Top Navigation Bar -->
     <header class="navbar" id="main-header">
@@ -102,7 +118,7 @@
         </div>
         <div class="brand-text">
           <h1>TenantRent</h1>
-          <span class="brand-tag">Rent & Utility Ledger</span>
+          <span class="brand-tag" id="user-role-badge">Admin Dashboard</span>
         </div>
       </div>
       
@@ -113,40 +129,25 @@
           <i data-feather="moon" class="icon-dark"></i>
         </button>
 
-        <!-- Change PIN / Lock screen -->
-        <button id="btn-change-pin" class="btn btn-icon" title="Change Admin PIN">
+        <!-- Change PIN / Security -->
+        <button id="btn-change-pin" class="btn btn-icon" title="Change PIN">
           <i data-feather="lock"></i>
         </button>
 
-        <!-- Google Sheets Sync Status Button -->
+        <!-- Google Sheets Sync Status Button (Admin view) -->
         <button id="btn-gsheets-sync" class="btn btn-outline" title="Google Sheets Live Sync">
           <i data-feather="grid"></i>
           <span id="gsheets-sync-text">Google Sheets Sync</span>
         </button>
 
-        <!-- Supabase Cloud Sync Status Button -->
-        <button id="btn-cloud-sync" class="btn btn-outline" title="Cloud Database Sync">
-          <i data-feather="cloud"></i>
-          <span id="sync-text">Cloud Sync</span>
+        <!-- Logout Button -->
+        <button id="btn-logout" class="btn btn-danger" title="Logout">
+          <i data-feather="log-out"></i>
+          <span>Logout</span>
         </button>
 
-        <!-- Excel Import/Export -->
-        <div class="dropdown">
-          <button class="btn btn-secondary" id="btn-excel-menu">
-            <i data-feather="file-text"></i>
-            <span>Excel</span>
-            <i data-feather="chevron-down"></i>
-          </button>
-          <div class="dropdown-content" id="excel-dropdown">
-            <button id="btn-import-excel"><i data-feather="upload"></i> Import Sheet (.xlsx)</button>
-            <button id="btn-export-excel"><i data-feather="download"></i> Export Sheet (.xlsx)</button>
-          </div>
-        </div>
-
-        <input type="file" id="file-excel-input" accept=".xlsx, .xls" style="display: none;" />
-
-        <!-- Switch View Mode (Admin vs Tenant View) -->
-        <div class="view-toggle-pill">
+        <!-- Switch View Mode (Admin vs Tenant View - Admin only) -->
+        <div class="view-toggle-pill" id="view-toggle-pill">
           <button id="btn-mode-admin" class="pill-btn active">Admin View</button>
           <button id="btn-mode-tenant" class="pill-btn">Tenant Portal</button>
         </div>
@@ -158,58 +159,66 @@
       
       <!-- ADMIN VIEW -->
       <section id="view-admin" class="view-section">
-        <!-- Top Stats Banner -->
+        <!-- Executive Financial Stats Bar -->
         <div class="stats-grid">
-          <div class="stat-card primary">
-            <div class="stat-icon"><i data-feather="users"></i></div>
-            <div class="stat-info">
+          <div class="stat-card">
+            <div class="stat-icon bg-primary-light text-primary">
+              <i data-feather="users"></i>
+            </div>
+            <div class="stat-data">
               <span class="stat-label">Active Tenants</span>
-              <h3 class="stat-value" id="stat-active-tenants">1 / 5</h3>
+              <h3 class="stat-value" id="stat-active-tenants">0 Tenant(s)</h3>
             </div>
           </div>
-          
-          <div class="stat-card success">
-            <div class="stat-icon"><i data-feather="check-circle"></i></div>
-            <div class="stat-info">
+
+          <div class="stat-card">
+            <div class="stat-icon bg-success-light text-success">
+              <i data-feather="check-circle"></i>
+            </div>
+            <div class="stat-data">
               <span class="stat-label">Collected This Month</span>
               <h3 class="stat-value" id="stat-collected-amount">₹0.00</h3>
             </div>
           </div>
 
-          <div class="stat-card warning">
-            <div class="stat-icon"><i data-feather="clock"></i></div>
-            <div class="stat-info">
+          <div class="stat-card">
+            <div class="stat-icon bg-warning-light text-warning">
+              <i data-feather="clock"></i>
+            </div>
+            <div class="stat-data">
               <span class="stat-label">Pending Collection</span>
               <h3 class="stat-value" id="stat-pending-amount">₹0.00</h3>
             </div>
           </div>
 
-          <div class="stat-card info">
-            <div class="stat-icon"><i data-feather="zap"></i></div>
-            <div class="stat-info">
+          <div class="stat-card">
+            <div class="stat-icon bg-info-light text-info">
+              <i data-feather="zap"></i>
+            </div>
+            <div class="stat-data">
               <span class="stat-label">Total Meter Units</span>
-              <h3 class="stat-value" id="stat-total-units">0 Units</h3>
+              <h3 class="stat-value" id="stat-total-units">0.0 Units</h3>
             </div>
           </div>
         </div>
 
-        <!-- Tenant Selector Tabs & Management -->
+        <!-- Tenant Selection Bar -->
         <div class="tenant-bar">
           <div class="tenant-tabs" id="tenant-tabs-container">
-            <!-- Dynamic Tenant Tabs rendered here -->
+            <!-- Dynamic tenant tabs populated by app.js -->
           </div>
-          <button id="btn-add-tenant" class="btn btn-primary">
-            <i data-feather="user-plus"></i> Add New Tenant
+          <button class="btn btn-primary" id="btn-add-tenant">
+            <i data-feather="plus"></i> Add New Tenant
           </button>
         </div>
 
-        <!-- Selected Tenant Header Card -->
+        <!-- Selected Tenant Detailed Overview -->
         <div class="tenant-summary-card" id="tenant-summary-card">
-          <!-- Dynamic details for selected tenant -->
+          <!-- Dynamic tenant metadata card -->
         </div>
 
-        <!-- Billing Records Section -->
-        <div class="card billing-section">
+        <!-- Monthly Billing Ledger Section -->
+        <div class="card">
           <div class="card-header">
             <div class="header-left">
               <h2><i data-feather="list"></i> Monthly Billing Ledger</h2>
@@ -220,15 +229,14 @@
                 <i data-feather="search"></i>
                 <input type="text" id="input-search-billing" placeholder="Search by month, status..." />
               </div>
-              <button id="btn-new-billing" class="btn btn-primary">
+              <button class="btn btn-primary" id="btn-new-billing">
                 <i data-feather="plus-circle"></i> Add Billing Month
               </button>
             </div>
           </div>
 
-          <!-- Billing Table -->
           <div class="table-responsive">
-            <table class="data-table" id="table-billing">
+            <table class="data-table" id="table-billing-ledger">
               <thead>
                 <tr>
                   <th>Billing Period</th>
@@ -244,42 +252,50 @@
                 </tr>
               </thead>
               <tbody id="tbody-billing">
-                <!-- Dynamic Billing Rows -->
+                <!-- Dynamic billing ledger rows -->
               </tbody>
             </table>
           </div>
         </div>
       </section>
 
-      <!-- TENANT PORTAL VIEW (Read-Only Shared View) -->
+      <!-- TENANT PASSBOOK PORTAL VIEW -->
       <section id="view-tenant-portal" class="view-section hidden">
-        <div class="tenant-portal-header card">
-          <div class="portal-badge"><i data-feather="user-check"></i> Shared Tenant Passbook</div>
-          <div class="portal-info">
-            <h1 id="portal-tenant-name">Tenant Name</h1>
-            <p id="portal-room-name"><i data-feather="map-pin"></i> Room Name</p>
+        <div class="card tenant-portal-header">
+          <div>
+            <span class="portal-badge"><i data-feather="user"></i> Shared Tenant Passbook</span>
           </div>
-          <div class="portal-tenant-select" id="portal-tenant-select-wrapper">
+          <div style="text-align:center">
+            <h1 id="portal-tenant-name">Tenant Passbook</h1>
+            <p id="portal-room-name" style="font-size:0.95rem;opacity:0.9;margin-top:2px"><i data-feather="map-pin"></i> Loading...</p>
+          </div>
+          <div class="portal-tenant-select" id="portal-controls-group">
             <label for="select-portal-tenant">Switch Tenant View:</label>
-            <select id="select-portal-tenant" class="form-control"></select>
+            <select id="select-portal-tenant" class="form-control" style="background:#ffffff;color:#0f172a;border-radius:10px;font-weight:600;min-width:180px">
+              <!-- Tenant dropdown -->
+            </select>
           </div>
         </div>
 
-        <!-- Latest Bill Banner -->
-        <div class="latest-bill-card card" id="latest-bill-container">
-          <!-- Latest monthly bill summary -->
+        <!-- Latest Bill Highlight -->
+        <div class="card latest-bill-card" id="latest-bill-container">
+          <!-- Dynamic latest bill summary -->
         </div>
 
-        <!-- Tenant Billing History Table -->
-        <div class="card portal-history">
+        <!-- Full Payment & Billing History -->
+        <div class="card">
           <div class="card-header">
-            <h2><i data-feather="history"></i> Billing & Payment History</h2>
-            <button id="btn-share-tenant-link" class="btn btn-secondary">
-              <i data-feather="share-2"></i> Copy Tenant Link
-            </button>
+            <div class="header-left">
+              <h2 style="font-size:1.25rem;font-weight:700">Billing &amp; Payment History</h2>
+            </div>
+            <div class="header-right">
+              <button class="btn btn-secondary" id="btn-share-tenant-link" style="background:#f1f5f9;color:#0f172a;border:1px solid #cbd5e1">
+                <i data-feather="share-2"></i> Copy Tenant Link
+              </button>
+            </div>
           </div>
           <div class="table-responsive">
-            <table class="data-table" id="table-tenant-history">
+            <table class="data-table">
               <thead>
                 <tr>
                   <th>Period</th>
@@ -294,22 +310,24 @@
                 </tr>
               </thead>
               <tbody id="tbody-tenant-history">
-                <!-- Dynamic Tenant Records -->
+                <!-- Dynamic history -->
               </tbody>
             </table>
           </div>
         </div>
       </section>
+
     </main>
 
     <!-- Footer -->
     <footer class="app-footer">
-      <p>TenantRent &copy; 2026 — Zero Domain & Server Cost Management App | GitHub Pages Ready</p>
+      TenantRent © 2026 — Zero Domain &amp; Server Cost Management App | GitHub Pages Ready
     </footer>
   </div>
 
-  <!-- MODALS -->
-  
+
+  <!-- ── MODALS ─────────────────────────────────────────────────── -->
+
   <!-- Add/Edit Tenant Modal -->
   <div class="modal-overlay hidden" id="modal-tenant">
     <div class="modal-container">
@@ -322,68 +340,67 @@
           <div class="form-row">
             <div class="form-group">
               <label for="input-room-name">Room / House Name *</label>
-              <input type="text" id="input-room-name" class="form-control" required placeholder="e.g. Room 101, Last Room" />
+              <input type="text" id="input-room-name" class="form-control" placeholder="e.g. Ground Floor Front, Room 102" required />
             </div>
             <div class="form-group">
-              <label for="input-tenant-name">Tenant Name *</label>
-              <input type="text" id="input-tenant-name" class="form-control" required placeholder="e.g. Kaif, Rahul Kumar" />
+              <label for="input-tenant-name">Tenant Full Name *</label>
+              <input type="text" id="input-tenant-name" class="form-control" placeholder="e.g. Rahul Kumar" required />
             </div>
           </div>
-          
+
           <div class="form-row">
             <div class="form-group">
-              <label for="input-phone">Phone / WhatsApp *</label>
-              <input type="text" id="input-phone" class="form-control" required placeholder="e.g. 9582482180" />
+              <label for="input-phone">Phone / WhatsApp Number</label>
+              <input type="tel" id="input-phone" class="form-control" placeholder="e.g. 9876543210" />
             </div>
             <div class="form-group">
-              <label for="input-movein-date">Move-in Date *</label>
+              <label for="input-movein-date">Move-in Date</label>
               <input type="date" id="input-movein-date" class="form-control" required />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label for="input-advance-deposit">Advance Deposit (₹) *</label>
-              <input type="number" step="0.01" id="input-advance-deposit" class="form-control" required placeholder="3400" />
+              <label for="input-advance-deposit">Advance Deposit (₹)</label>
+              <input type="number" step="0.01" id="input-advance-deposit" class="form-control" placeholder="0.00" />
             </div>
             <div class="form-group">
               <label for="input-base-rent">Base Monthly Rent (₹) *</label>
-              <input type="number" step="0.01" id="input-base-rent" class="form-control" required placeholder="4000" />
+              <input type="number" step="0.01" id="input-base-rent" class="form-control" placeholder="4000.00" required />
+            </div>
+            <div class="form-group">
+              <label for="input-meter-rate">Meter Rate per Unit (₹)</label>
+              <input type="number" step="0.1" id="input-meter-rate" class="form-control" value="8" required />
             </div>
           </div>
-
-          <div class="form-group">
-            <label for="input-meter-rate">Meter Rate (₹ per unit) *</label>
-            <input type="number" step="0.01" id="input-meter-rate" class="form-control" required value="8.0" />
-          </div>
         </div>
+
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" id="btn-cancel-tenant">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Tenant</button>
+          <button type="submit" class="btn btn-primary">Save Tenant Profile</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Add/Edit Monthly Billing Record Modal -->
+  <!-- Add/Edit Monthly Bill Modal -->
   <div class="modal-overlay hidden" id="modal-billing">
     <div class="modal-container modal-lg">
       <div class="modal-header">
-        <h3 id="modal-billing-title">Add Monthly Bill Entry</h3>
+        <h3 id="modal-billing-title">Add Monthly Bill</h3>
         <button class="btn-close" id="btn-close-billing-modal">&times;</button>
       </div>
       <form id="form-billing">
         <div class="modal-body">
-          <!-- Billing Period -->
-          <div class="form-section-title"><i data-feather="calendar"></i> Billing Period</div>
+          <!-- Billing Cycle Dates -->
           <div class="form-row">
             <div class="form-group">
-              <label for="input-from-date">From Date *</label>
-              <input type="date" id="input-from-date" class="form-control" required />
+              <label for="input-from-date">Billing From Date *</label>
+              <input type="date" id="input-from-date" class="form-control meter-calc" required />
             </div>
             <div class="form-group">
-              <label for="input-to-date">To Date *</label>
-              <input type="date" id="input-to-date" class="form-control" required />
+              <label for="input-to-date">Billing To Date *</label>
+              <input type="date" id="input-to-date" class="form-control meter-calc" required />
             </div>
           </div>
 
@@ -400,7 +417,7 @@
             </div>
             <div class="form-group">
               <label for="input-elec-unit">Electricity Units</label>
-              <input type="number" step="0.01" id="input-elec-unit" class="form-control" readonly style="background: var(--bg-surface-secondary);" />
+              <input type="number" step="0.01" id="input-elec-unit" class="form-control meter-calc" placeholder="0.0" readonly />
             </div>
           </div>
 
@@ -490,8 +507,8 @@
               <input type="number" step="0.01" id="input-extra-charge" class="form-control meter-calc" value="0" />
             </div>
             <div class="form-group">
-              <label for="input-total-bill">Calculated Total Bill (₹)</label>
-              <input type="number" step="0.01" id="input-total-bill" class="form-control highlight-input" readonly />
+              <label for="input-total-bill">Total Bill Amount (₹)</label>
+              <input type="number" step="0.01" id="input-total-bill" class="form-control" readonly />
             </div>
           </div>
 
@@ -576,38 +593,10 @@
     </div>
   </div>
 
-  <!-- Cloud Sync Config Modal (Option A - Supabase) -->
-  <div class="modal-overlay hidden" id="modal-cloud-sync">
-    <div class="modal-container">
-      <div class="modal-header">
-        <h3><i data-feather="cloud"></i> Supabase Free Cloud Sync</h3>
-        <button class="btn-close" id="btn-close-sync-modal">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p class="modal-desc">Connect your free <strong>Supabase</strong> project to automatically back up tenant records to the cloud and enable real-time access across phone & laptop.</p>
-        
-        <div class="form-group">
-          <label for="input-supabase-url">Supabase Project URL</label>
-          <input type="text" id="input-supabase-url" class="form-control" placeholder="https://your-project.supabase.co" />
-        </div>
-
-        <div class="form-group">
-          <label for="input-supabase-key">Supabase Anon Key</label>
-          <input type="password" id="input-supabase-key" class="form-control" placeholder="eyJhbGciOiJIUzI1Ni..." />
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" id="btn-disconnect-cloud">Disconnect Cloud</button>
-        <button class="btn btn-primary" id="btn-save-cloud">Save & Connect</button>
-      </div>
-    </div>
-  </div>
-
   <!-- App Scripts -->
   <script src="js/types.js"></script>
   <script src="js/storageService.js"></script>
   <script src="js/googleSheetsService.js"></script>
-  <script src="js/excelService.js"></script>
   <script src="js/pinAuth.js"></script>
   <script src="js/waterFormula.js"></script>
   <script src="js/app.js"></script>
