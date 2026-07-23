@@ -573,7 +573,17 @@
           <input type="text" id="input-gsheets-url" class="form-control" placeholder="https://script.google.com/macros/s/AKfycb.../exec" />
         </div>
 
-        <div class="alert alert-info">
+        <div class="form-group" id="mobile-sync-container" style="display:none;margin-top:1rem;padding:0.85rem;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">
+          <label style="font-weight:600;display:flex;align-items:center;gap:0.4rem"><i data-feather="smartphone"></i> Automatic Mobile Sync Link</label>
+          <p style="font-size:0.85rem;color:var(--text-muted);margin:0.35rem 0 0.65rem">
+            Open this link on your mobile phone once to automatically connect Google Sheets without entering the URL again!
+          </p>
+          <button type="button" class="btn btn-secondary" id="btn-copy-mobile-sync-link" style="width:100%">
+            <i data-feather="copy"></i> Copy Mobile Direct Sync Link
+          </button>
+        </div>
+
+        <div class="alert alert-info" style="margin-top:1rem">
           <i data-feather="info"></i>
           <div>
             <strong>How to get your Web App URL (Takes 1 minute):</strong>

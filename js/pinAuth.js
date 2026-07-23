@@ -366,11 +366,18 @@ var pinAuth = (function () {
     }
   }
 
+  function setAdminPinHash(psHash) {
+    if (psHash) {
+      localStorage.setItem(STORAGE_KEY_ADMIN_PIN, psHash);
+    }
+  }
+
   // ── Public API ──────────────────────────────────────────────────────────────
   return {
     init:                   init,
     logout:                 logout,
     populateTenantDropdown: populateTenantDropdown,
+    setAdminPinHash:        setAdminPinHash,
     getLoggedInRole:        function () { return _sLoggedInRole; },
     getLoggedInTenantId:    function () { return _sLoggedInTenantId; },
     isLoggedIn:             function () { return _sLoggedInRole !== null; }

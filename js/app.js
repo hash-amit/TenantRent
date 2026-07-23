@@ -36,8 +36,12 @@ var TenantRentApp = /** @class */ (function () {
           storageService.saveTenants(this.arrTenants);
         }
         if (jsonLive.admin_config) {
-          if (jsonLive.admin_config.admin_pin_hash && typeof STORAGE_KEY_ADMIN_PIN !== "undefined") {
-            localStorage.setItem(STORAGE_KEY_ADMIN_PIN, jsonLive.admin_config.admin_pin_hash);
+          if (jsonLive.admin_config.admin_pin_hash) {
+            if (typeof pinAuth !== "undefined") {
+              pinAuth.setAdminPinHash(jsonLive.admin_config.admin_pin_hash);
+            } else if (typeof STORAGE_KEY_ADMIN_PIN !== "undefined") {
+              localStorage.setItem(STORAGE_KEY_ADMIN_PIN, jsonLive.admin_config.admin_pin_hash);
+            }
           }
           if (jsonLive.admin_config.water_formula_type && typeof STORAGE_KEY_WATER_FORMULA !== "undefined") {
             var cfg = {
@@ -141,6 +145,13 @@ var TenantRentApp = /** @class */ (function () {
       self._closeGSModal();
       self._render();
       alert("Google Sheets Sync disconnected.");
+    });
+    _on("btn-copy-mobile-sync-link", "click", function () {
+      var sLink = googleSheetsService.getMobileSyncLink();
+      if (!sLink) return;
+      navigator.clipboard.writeText(sLink)
+        .then(function () { alert("📱 Mobile Sync Link copied!\n\nSend or open this link on your mobile phone once to automatically connect Google Sheets without entering the URL again:\n\n" + sLink); })
+        .catch(function () { alert("Mobile Link: " + sLink); });
     });
     _on("btn-save-gsheets", "click", async function () {
       var elInp = document.getElementById("input-gsheets-url");
@@ -269,7 +280,12 @@ var TenantRentApp = /** @class */ (function () {
   // GOOGLE SHEETS MODAL
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype._openGSModal = function () {
-    document.getElementById("input-gsheets-url").value = googleSheetsService.getWebAppUrl();
+    var sUrl = googleSheetsService.getWebAppUrl();
+    document.getElementById("input-gsheets-url").value = sUrl;
+    var elMobCont = document.getElementById("mobile-sync-container");
+    if (elMobCont) {
+      elMobCont.style.display = googleSheetsService.bIsConnected ? "block" : "none";
+    }
     document.getElementById("modal-gsheets-sync").classList.remove("hidden");
   };
   TenantRentApp.prototype._closeGSModal = function () {
@@ -595,7 +611,12 @@ var TenantRentApp = /** @class */ (function () {
     var self = this;
     var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === self.sActiveTenantId; });
     if (!objTenant) return;
-    var sLink = window.location.origin + window.location.pathname + "#tenant/" + (objTenant.share_key || objTenant.tenant_id);
+    var sBaseUrl = window.location.origin + window.location.pathname;
+    var sHash = "#tenant/" + (objTenant.share_key || objTenant.tenant_id);
+    var sLink = sBaseUrl + sHash;
+    if (googleSheetsService.bIsConnected && googleSheetsService.getWebAppUrl()) {
+      sLink = sBaseUrl + "?gs_url=" + encodeURIComponent(googleSheetsService.getWebAppUrl()) + sHash;
+    }
     navigator.clipboard.writeText(sLink)
       .then(function () { alert("Tenant passbook link copied!\n\n" + sLink); })
       .catch(function () { alert("Link: " + sLink); });

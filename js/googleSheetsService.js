@@ -6,14 +6,67 @@
 
 var STORAGE_KEY_GS_URL = "tenantrent_v2_gs_url";
 
-// Set default Google Sheets Web App URL here if desired for automatic cross-device sync
-var DEFAULT_GS_WEB_APP_URL = "";
+// Set default Google Sheets Web App URL here for automatic cross-device sync across all phones & PCs
+var DEFAULT_GS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwI5oOiakD_lf3turOhpnDKmpUlwlmJSgSPEVWyaMsrOubqAlrNVpKPsFRDBXyIlFHE/exec";
 
 var GoogleSheetsService = /** @class */ (function () {
   function GoogleSheetsService() {
-    this.sWebAppUrl = localStorage.getItem(STORAGE_KEY_GS_URL) || DEFAULT_GS_WEB_APP_URL;
-    this.bIsConnected = !!this.sWebAppUrl;
+    this.sWebAppUrl = "";
+    this.bIsConnected = false;
+    this._initUrl();
   }
+
+  GoogleSheetsService.prototype._initUrl = function () {
+    // 1. Check URL query parameters e.g. ?gs_url=... or ?gs=... or ?sheetUrl=...
+    var sQueryUrl = this._getParamFromUrl();
+    if (sQueryUrl) {
+      localStorage.setItem(STORAGE_KEY_GS_URL, sQueryUrl);
+      this._cleanQueryParam();
+    }
+
+    // 2. Read from localStorage or fallback to DEFAULT_GS_WEB_APP_URL
+    var sStoredUrl = localStorage.getItem(STORAGE_KEY_GS_URL);
+    this.sWebAppUrl = (sStoredUrl || DEFAULT_GS_WEB_APP_URL || "").trim();
+
+    // 3. If connected via DEFAULT_GS_WEB_APP_URL, save it to localStorage for offline cache
+    if (this.sWebAppUrl && !sStoredUrl) {
+      localStorage.setItem(STORAGE_KEY_GS_URL, this.sWebAppUrl);
+    }
+
+    this.bIsConnected = !!this.sWebAppUrl;
+  };
+
+  GoogleSheetsService.prototype._getParamFromUrl = function () {
+    try {
+      if (typeof window === "undefined" || !window.location) return null;
+      var objParams = new URLSearchParams(window.location.search);
+      var sVal = objParams.get("gs_url") || objParams.get("gs") || objParams.get("sheetUrl");
+      return sVal ? decodeURIComponent(sVal).trim() : null;
+    } catch (err) {
+      console.warn("GoogleSheetsService._getParamFromUrl error:", err);
+      return null;
+    }
+  };
+
+  GoogleSheetsService.prototype._cleanQueryParam = function () {
+    try {
+      if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+        var objUrl = new URL(window.location.href);
+        objUrl.searchParams.delete("gs_url");
+        objUrl.searchParams.delete("gs");
+        objUrl.searchParams.delete("sheetUrl");
+        window.history.replaceState({}, document.title, objUrl.pathname + objUrl.search + objUrl.hash);
+      }
+    } catch (err) {
+      console.warn("GoogleSheetsService._cleanQueryParam error:", err);
+    }
+  };
+
+  GoogleSheetsService.prototype.getMobileSyncLink = function () {
+    if (!this.sWebAppUrl || typeof window === "undefined") return "";
+    var sBaseUrl = window.location.origin + window.location.pathname;
+    return sBaseUrl + "?gs_url=" + encodeURIComponent(this.sWebAppUrl);
+  };
 
   // ── Config ─────────────────────────────────────────────────────────────────
   GoogleSheetsService.prototype.getWebAppUrl = function () {
@@ -21,10 +74,11 @@ var GoogleSheetsService = /** @class */ (function () {
   };
 
   GoogleSheetsService.prototype.setWebAppUrl = function (psUrl) {
-    this.sWebAppUrl = (psUrl || "").trim() || DEFAULT_GS_WEB_APP_URL;
+    var sCleanUrl = (psUrl || "").trim();
+    this.sWebAppUrl = sCleanUrl || DEFAULT_GS_WEB_APP_URL;
     this.bIsConnected = !!this.sWebAppUrl;
-    if (this.sWebAppUrl) {
-      localStorage.setItem(STORAGE_KEY_GS_URL, this.sWebAppUrl);
+    if (sCleanUrl) {
+      localStorage.setItem(STORAGE_KEY_GS_URL, sCleanUrl);
     } else {
       localStorage.removeItem(STORAGE_KEY_GS_URL);
     }
