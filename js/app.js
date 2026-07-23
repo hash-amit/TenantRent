@@ -122,36 +122,36 @@ var TenantRentApp = /** @class */ (function () {
   TenantRentApp.prototype._setupEvents = function () {
     var self = this;
 
-    // View toggle (Admin mode only)
-    document.getElementById("btn-mode-admin") .addEventListener("click", function () { self._setMode(false); });
-    document.getElementById("btn-mode-tenant").addEventListener("click", function () { self._setMode(true);  });
+    function _on(psId, psEvent, fnHandler) {
+      var el = document.getElementById(psId);
+      if (el) el.addEventListener(psEvent, fnHandler);
+    }
 
-    // Theme
-    document.getElementById("btn-theme-toggle").addEventListener("click", function () { self._toggleTheme(); });
-
-    // Logout
-    document.getElementById("btn-logout").addEventListener("click", function () {
+    _on("btn-mode-admin", "click", function () { self._setMode(false); });
+    _on("btn-mode-tenant", "click", function () { self._setMode(true); });
+    _on("btn-theme-toggle", "click", function () { self._toggleTheme(); });
+    _on("btn-logout", "click", function () {
       if (typeof pinAuth !== "undefined") pinAuth.logout();
     });
 
-    // Google Sheets sync modal
-    document.getElementById("btn-gsheets-sync").addEventListener("click",        function () { self._openGSModal(); });
-    document.getElementById("btn-close-gsheets-modal").addEventListener("click", function () { self._closeGSModal(); });
-    document.getElementById("btn-disconnect-gsheets").addEventListener("click",  function () {
+    _on("btn-gsheets-sync", "click", function () { self._openGSModal(); });
+    _on("btn-close-gsheets-modal", "click", function () { self._closeGSModal(); });
+    _on("btn-disconnect-gsheets", "click", function () {
       googleSheetsService.setWebAppUrl("");
       self._closeGSModal();
       self._render();
       alert("Google Sheets Sync disconnected.");
     });
-    document.getElementById("btn-save-gsheets").addEventListener("click", async function () {
-      var sUrl = document.getElementById("input-gsheets-url").value.trim();
+    _on("btn-save-gsheets", "click", async function () {
+      var elInp = document.getElementById("input-gsheets-url");
+      var sUrl = elInp ? elInp.value.trim() : "";
       googleSheetsService.setWebAppUrl(sUrl);
       self._closeGSModal();
       self._render();
       if (googleSheetsService.bIsConnected) {
-        var arrLive = await googleSheetsService.fetchAll();
-        if (arrLive !== null) {
-          self.arrTenants = arrLive;
+        var jsonLive = await googleSheetsService.fetchAll();
+        if (jsonLive !== null) {
+          if (Array.isArray(jsonLive.data)) self.arrTenants = jsonLive.data;
           storageService.saveTenants(self.arrTenants);
           if (typeof pinAuth !== "undefined") pinAuth.populateTenantDropdown(self.arrTenants);
           if (self.arrTenants.length > 0) self.sActiveTenantId = self.arrTenants[0].tenant_id;
@@ -163,45 +163,40 @@ var TenantRentApp = /** @class */ (function () {
       }
     });
 
-    // Tenant modal
-    document.getElementById("btn-add-tenant")          .addEventListener("click",  function () { self._openTenantModal(); });
-    document.getElementById("btn-close-tenant-modal")  .addEventListener("click",  function () { self._closeTenantModal(); });
-    document.getElementById("btn-cancel-tenant")       .addEventListener("click",  function () { self._closeTenantModal(); });
-    document.getElementById("form-tenant")             .addEventListener("submit", function (e) { self._handleSaveTenant(e); });
+    _on("btn-add-tenant", "click", function () { self._openTenantModal(); });
+    _on("btn-close-tenant-modal", "click", function () { self._closeTenantModal(); });
+    _on("btn-cancel-tenant", "click", function () { self._closeTenantModal(); });
+    _on("form-tenant", "submit", function (e) { self._handleSaveTenant(e); });
 
-    // Billing modal
-    document.getElementById("btn-new-billing")         .addEventListener("click",  function () { self._openBillingModal(); });
-    document.getElementById("btn-close-billing-modal") .addEventListener("click",  function () { self._closeBillingModal(); });
-    document.getElementById("btn-cancel-billing")      .addEventListener("click",  function () { self._closeBillingModal(); });
-    document.getElementById("form-billing")            .addEventListener("submit", function (e) { self._handleSaveBilling(e); });
+    _on("btn-new-billing", "click", function () { self._openBillingModal(); });
+    _on("btn-close-billing-modal", "click", function () { self._closeBillingModal(); });
+    _on("btn-cancel-billing", "click", function () { self._closeBillingModal(); });
+    _on("form-billing", "submit", function (e) { self._handleSaveBilling(e); });
 
-    // Live meter calc inputs
     document.querySelectorAll(".meter-calc").forEach(function (inp) {
       inp.addEventListener("input", function () { self._recalcBill(); });
     });
 
-    // Search
-    document.getElementById("input-search-billing").addEventListener("input", function (e) {
+    _on("input-search-billing", "input", function (e) {
       self._renderBillingTable(e.target.value);
     });
 
-    // Tenant portal select (Admin mode only)
-    document.getElementById("select-portal-tenant").addEventListener("change", function (e) {
-      if (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "tenant") return; // prevent tenant from switching
+    _on("select-portal-tenant", "change", function (e) {
+      if (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "tenant") return;
       self.sActiveTenantId = e.target.value;
       self._render();
     });
 
-    // Share link
-    document.getElementById("btn-share-tenant-link").addEventListener("click", function () { self._copyShareLink(); });
+    _on("btn-share-tenant-link", "click", function () { self._copyShareLink(); });
 
-    // Receipt modal
-    document.getElementById("btn-close-receipt-modal").addEventListener("click", function () {
-      document.getElementById("modal-receipt").classList.add("hidden");
+    _on("btn-close-receipt-modal", "click", function () {
+      var modal = document.getElementById("modal-receipt");
+      if (modal) modal.classList.add("hidden");
     });
-    document.getElementById("btn-print-receipt")  .addEventListener("click", function () { window.print(); });
-    document.getElementById("btn-whatsapp-share") .addEventListener("click", function () { self._sendWhatsApp(); });
+    _on("btn-print-receipt", "click", function () { window.print(); });
+    _on("btn-whatsapp-share", "click", function () { self._sendWhatsApp(); });
   };
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // DATA PERSISTENCE HELPERS
