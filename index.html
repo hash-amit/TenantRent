@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TenantRent — Smart Rent & Utility Manager</title>
+  <meta name="description" content="Manage tenant rent, electricity bill units, water meter units, advance deposits, and shared bill receipts with zero domain cost." />
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Feather Icons & SheetJS -->
+  <script src="https://unpkg.com/feather-icons"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Supabase JS Client (Option A Cloud Sync) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <!-- ── PIN LOCK SCREEN ─────────────────────────────────────────── -->
+  <div id="pin-lock-screen">
+    <div class="lock-brand">
+      <div class="lock-logo">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h1>TenantRent</h1>
+      <p>Enter your admin PIN to continue</p>
+    </div>
+
+    <div class="lock-card" id="pin-card">
+      <div class="lock-label" id="pin-label">Enter 4-digit PIN</div>
+
+      <div class="pin-dots" id="pin-dots">
+        <div class="pin-dot" id="dot-0"></div>
+        <div class="pin-dot" id="dot-1"></div>
+        <div class="pin-dot" id="dot-2"></div>
+        <div class="pin-dot" id="dot-3"></div>
+      </div>
+
+      <div class="pin-error-msg" id="pin-error"></div>
+
+      <div class="pin-keypad">
+        <button class="pin-key" data-digit="1">1</button>
+        <button class="pin-key" data-digit="2">2</button>
+        <button class="pin-key" data-digit="3">3</button>
+        <button class="pin-key" data-digit="4">4</button>
+        <button class="pin-key" data-digit="5">5</button>
+        <button class="pin-key" data-digit="6">6</button>
+        <button class="pin-key" data-digit="7">7</button>
+        <button class="pin-key" data-digit="8">8</button>
+        <button class="pin-key" data-digit="9">9</button>
+        <button class="pin-key key-clear" data-action="clear">CLR</button>
+        <button class="pin-key" data-digit="0">0</button>
+        <button class="pin-key key-del" data-action="del">⌫</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Change PIN Modal ─────────────────────────────────────────── -->
+  <div class="modal-overlay hidden" id="modal-change-pin">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3>🔐 Change Admin PIN</h3>
+        <button class="btn-close" id="btn-close-pin-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="input-current-pin">Current PIN</label>
+          <input type="password" id="input-current-pin" class="form-control" maxlength="4" placeholder="Enter current PIN" />
+        </div>
+        <div class="form-group">
+          <label for="input-new-pin">New PIN (4 digits)</label>
+          <input type="password" id="input-new-pin" class="form-control" maxlength="4" placeholder="Enter new PIN" />
+        </div>
+        <div class="form-group">
+          <label for="input-confirm-pin">Confirm New PIN</label>
+          <input type="password" id="input-confirm-pin" class="form-control" maxlength="4" placeholder="Confirm new PIN" />
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem">⚠️ Default PIN is <strong>1234</strong>. Change it immediately after first login.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-pin-modal">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-new-pin">Change PIN</button>
+      </div>
+    </div>
+  </div>
+  <div id="app" class="app-container">
+    <!-- Top Navigation Bar -->
+    <header class="navbar" id="main-header">
+      <div class="nav-brand">
+        <div class="brand-logo">
+          <i data-feather="home"></i>
+        </div>
+        <div class="brand-text">
+          <h1>TenantRent</h1>
+          <span class="brand-tag">Rent & Utility Ledger</span>
+        </div>
+      </div>
+      
+      <div class="nav-actions">
+        <!-- Theme Toggle -->
+        <button id="btn-theme-toggle" class="btn btn-icon" title="Toggle Theme" aria-label="Toggle Theme">
+          <i data-feather="sun" class="icon-light"></i>
+          <i data-feather="moon" class="icon-dark"></i>
+        </button>
+
+        <!-- Change PIN / Lock screen -->
+        <button id="btn-change-pin" class="btn btn-icon" title="Change Admin PIN">
+          <i data-feather="lock"></i>
+        </button>
+
+        <!-- Google Sheets Sync Status Button -->
+        <button id="btn-gsheets-sync" class="btn btn-outline" title="Google Sheets Live Sync">
+          <i data-feather="grid"></i>
+          <span id="gsheets-sync-text">Google Sheets Sync</span>
+        </button>
+
+        <!-- Supabase Cloud Sync Status Button -->
+        <button id="btn-cloud-sync" class="btn btn-outline" title="Cloud Database Sync">
+          <i data-feather="cloud"></i>
+          <span id="sync-text">Cloud Sync</span>
+        </button>
+
+        <!-- Excel Import/Export -->
+        <div class="dropdown">
+          <button class="btn btn-secondary" id="btn-excel-menu">
+            <i data-feather="file-text"></i>
+            <span>Excel</span>
+            <i data-feather="chevron-down"></i>
+          </button>
+          <div class="dropdown-content" id="excel-dropdown">
+            <button id="btn-import-excel"><i data-feather="upload"></i> Import Sheet (.xlsx)</button>
+            <button id="btn-export-excel"><i data-feather="download"></i> Export Sheet (.xlsx)</button>
+          </div>
+        </div>
+
+        <input type="file" id="file-excel-input" accept=".xlsx, .xls" style="display: none;" />
+
+        <!-- Switch View Mode (Admin vs Tenant View) -->
+        <div class="view-toggle-pill">
+          <button id="btn-mode-admin" class="pill-btn active">Admin View</button>
+          <button id="btn-mode-tenant" class="pill-btn">Tenant Portal</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content" id="main-content">
+      
+      <!-- ADMIN VIEW -->
+      <section id="view-admin" class="view-section">
+        <!-- Top Stats Banner -->
+        <div class="stats-grid">
+          <div class="stat-card primary">
+            <div class="stat-icon"><i data-feather="users"></i></div>
+            <div class="stat-info">
+              <span class="stat-label">Active Tenants</span>
+              <h3 class="stat-value" id="stat-active-tenants">1 / 5</h3>
+            </div>
+          </div>
+          
+          <div class="stat-card success">
+            <div class="stat-icon"><i data-feather="check-circle"></i></div>
+            <div class="stat-info">
+              <span class="stat-label">Collected This Month</span>
+              <h3 class="stat-value" id="stat-collected-amount">₹0.00</h3>
+            </div>
+          </div>
+
+          <div class="stat-card warning">
+            <div class="stat-icon"><i data-feather="clock"></i></div>
+            <div class="stat-info">
+              <span class="stat-label">Pending Collection</span>
+              <h3 class="stat-value" id="stat-pending-amount">₹0.00</h3>
+            </div>
+          </div>
+
+          <div class="stat-card info">
+            <div class="stat-icon"><i data-feather="zap"></i></div>
+            <div class="stat-info">
+              <span class="stat-label">Total Meter Units</span>
+              <h3 class="stat-value" id="stat-total-units">0 Units</h3>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tenant Selector Tabs & Management -->
+        <div class="tenant-bar">
+          <div class="tenant-tabs" id="tenant-tabs-container">
+            <!-- Dynamic Tenant Tabs rendered here -->
+          </div>
+          <button id="btn-add-tenant" class="btn btn-primary">
+            <i data-feather="user-plus"></i> Add New Tenant
+          </button>
+        </div>
+
+        <!-- Selected Tenant Header Card -->
+        <div class="tenant-summary-card" id="tenant-summary-card">
+          <!-- Dynamic details for selected tenant -->
+        </div>
+
+        <!-- Billing Records Section -->
+        <div class="card billing-section">
+          <div class="card-header">
+            <div class="header-left">
+              <h2><i data-feather="list"></i> Monthly Billing Ledger</h2>
+              <span class="badge" id="badge-record-count">0 Entries</span>
+            </div>
+            <div class="header-right">
+              <div class="search-box">
+                <i data-feather="search"></i>
+                <input type="text" id="input-search-billing" placeholder="Search by month, status..." />
+              </div>
+              <button id="btn-new-billing" class="btn btn-primary">
+                <i data-feather="plus-circle"></i> Add Billing Month
+              </button>
+            </div>
+          </div>
+
+          <!-- Billing Table -->
+          <div class="table-responsive">
+            <table class="data-table" id="table-billing">
+              <thead>
+                <tr>
+                  <th>Billing Period</th>
+                  <th>Electricity (Units)</th>
+                  <th>Water (Units)</th>
+                  <th>Meter Bill</th>
+                  <th>Rent</th>
+                  <th>Total Due</th>
+                  <th>Payment Status</th>
+                  <th>Paid Date & Amt</th>
+                  <th>Balance</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-billing">
+                <!-- Dynamic Billing Rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TENANT PORTAL VIEW (Read-Only Shared View) -->
+      <section id="view-tenant-portal" class="view-section hidden">
+        <div class="tenant-portal-header card">
+          <div class="portal-badge"><i data-feather="user-check"></i> Shared Tenant Passbook</div>
+          <div class="portal-info">
+            <h1 id="portal-tenant-name">Tenant Name</h1>
+            <p id="portal-room-name"><i data-feather="map-pin"></i> Room Name</p>
+          </div>
+          <div class="portal-tenant-select" id="portal-tenant-select-wrapper">
+            <label for="select-portal-tenant">Switch Tenant View:</label>
+            <select id="select-portal-tenant" class="form-control"></select>
+          </div>
+        </div>
+
+        <!-- Latest Bill Banner -->
+        <div class="latest-bill-card card" id="latest-bill-container">
+          <!-- Latest monthly bill summary -->
+        </div>
+
+        <!-- Tenant Billing History Table -->
+        <div class="card portal-history">
+          <div class="card-header">
+            <h2><i data-feather="history"></i> Billing & Payment History</h2>
+            <button id="btn-share-tenant-link" class="btn btn-secondary">
+              <i data-feather="share-2"></i> Copy Tenant Link
+            </button>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="table-tenant-history">
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Electricity</th>
+                  <th>Water</th>
+                  <th>Total Meter Bill</th>
+                  <th>Rent</th>
+                  <th>Total Bill</th>
+                  <th>Status</th>
+                  <th>Paid Amount</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-tenant-history">
+                <!-- Dynamic Tenant Records -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>TenantRent &copy; 2026 — Zero Domain & Server Cost Management App | GitHub Pages Ready</p>
+    </footer>
+  </div>
+
+  <!-- MODALS -->
+  
+  <!-- Add/Edit Tenant Modal -->
+  <div class="modal-overlay hidden" id="modal-tenant">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 id="modal-tenant-title">Add New Tenant</h3>
+        <button class="btn-close" id="btn-close-tenant-modal">&times;</button>
+      </div>
+      <form id="form-tenant">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="input-room-name">Room / House Name *</label>
+              <input type="text" id="input-room-name" class="form-control" required placeholder="e.g. Room 101, Last Room" />
+            </div>
+            <div class="form-group">
+              <label for="input-tenant-name">Tenant Name *</label>
+              <input type="text" id="input-tenant-name" class="form-control" required placeholder="e.g. Kaif, Rahul Kumar" />
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="input-phone">Phone / WhatsApp *</label>
+              <input type="text" id="input-phone" class="form-control" required placeholder="e.g. 9582482180" />
+            </div>
+            <div class="form-group">
+              <label for="input-movein-date">Move-in Date *</label>
+              <input type="date" id="input-movein-date" class="form-control" required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="input-advance-deposit">Advance Deposit (₹) *</label>
+              <input type="number" step="0.01" id="input-advance-deposit" class="form-control" required placeholder="3400" />
+            </div>
+            <div class="form-group">
+              <label for="input-base-rent">Base Monthly Rent (₹) *</label>
+              <input type="number" step="0.01" id="input-base-rent" class="form-control" required placeholder="4000" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="input-meter-rate">Meter Rate (₹ per unit) *</label>
+            <input type="number" step="0.01" id="input-meter-rate" class="form-control" required value="8.0" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-tenant">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Tenant</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add/Edit Monthly Billing Record Modal -->
+  <div class="modal-overlay hidden" id="modal-billing">
+    <div class="modal-container modal-lg">
+      <div class="modal-header">
+        <h3 id="modal-billing-title">Add Monthly Bill Entry</h3>
+        <button class="btn-close" id="btn-close-billing-modal">&times;</button>
+      </div>
+      <form id="form-billing">
+        <div class="modal-body">
+          <!-- Billing Period -->
+          <div class="form-section-title"><i data-feather="calendar"></i> Billing Period</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="input-from-date">From Date *</label>
+              <input type="date" id="input-from-date" class="form-control" required />
+            </div>
+            <div class="form-group">
+              <label for="input-to-date">To Date *</label>
+              <input type="date" id="input-to-date" class="form-control" required />
+            </div>
+          </div>
+
+          <!-- Electricity Meter -->
+          <div class="form-section-title"><i data-feather="zap"></i> Electricity Meter</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="input-elec-before">Previous Reading (Before)</label>
+              <input type="number" step="0.1" id="input-elec-before" class="form-control meter-calc" placeholder="0.0" />
+            </div>
+            <div class="form-group">
+              <label for="input-elec-current">Current Reading</label>
+              <input type="number" step="0.1" id="input-elec-current" class="form-control meter-calc" placeholder="0.0" />
+            </div>
+            <div class="form-group">
+              <label for="input-elec-unit">Electricity Units</label>
+              <input type="number" step="0.01" id="input-elec-unit" class="form-control" readonly style="background: var(--bg-surface-secondary);" />
+            </div>
+          </div>
+
+          <!-- Water Meter -->
+          <div class="form-section-title"><i data-feather="droplet"></i> Water Meter</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="input-water-before">Previous Reading (Before)</label>
+              <input type="number" step="0.1" id="input-water-before" class="form-control meter-calc" placeholder="0.0" />
+            </div>
+            <div class="form-group">
+              <label for="input-water-current">Current Reading</label>
+              <input type="number" step="0.1" id="input-water-current" class="form-control meter-calc" placeholder="0.0" />
+            </div>
+            <div class="form-group">
+              <label for="input-water-unit">
+                Water Units
+                <span id="water-formula-badge" style="
+                  font-size:0.7rem;font-weight:600;padding:2px 8px;border-radius:20px;
+                  background:var(--primary-light);color:var(--primary);
+                  margin-left:6px;vertical-align:middle;cursor:pointer;
+                  border:1px solid var(--primary)" title="Click to change water formula"
+                  onclick="waterFormula.openSettings()">⚙ Formula</span>
+              </label>
+              <input type="number" step="0.01" id="input-water-unit" class="form-control meter-calc" placeholder="auto-calculated" />
+            </div>
+          </div>
+
+          <!-- Water Formula Settings (collapsible) -->
+          <div id="water-formula-panel" class="hidden" style="
+            background:var(--bg-surface-secondary);border:1px solid var(--border-color);
+            border-radius:var(--radius-md);padding:1rem;margin-bottom:0.75rem">
+            <div style="font-size:0.825rem;font-weight:700;color:var(--text-secondary);margin-bottom:0.75rem">
+              💧 Water Unit Formula
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.6rem">
+              <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;cursor:pointer">
+                <input type="radio" name="water-formula-type" id="radio-formula-default" value="default" />
+                <span><strong>Default</strong> — Current − Previous</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;cursor:pointer">
+                <input type="radio" name="water-formula-type" id="radio-formula-divided" value="divided" />
+                <span><strong>Shared</strong> — (Current − Previous) ÷ <em>N</em> tenants</span>
+              </label>
+              <div id="formula-divisor-row" class="hidden" style="display:flex;align-items:center;gap:0.5rem;padding-left:1.5rem">
+                <label style="font-size:0.8rem;white-space:nowrap">Number of tenants sharing the water meter:</label>
+                <input type="number" id="input-formula-divisor" class="form-control" min="1" max="20" step="1"
+                       style="width:80px" placeholder="2" />
+              </div>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+              <button type="button" class="btn btn-primary" style="padding:0.4rem 1rem;font-size:0.8rem"
+                      onclick="waterFormula.saveSettings()">Apply &amp; Save</button>
+              <button type="button" class="btn btn-secondary" style="padding:0.4rem 1rem;font-size:0.8rem"
+                      onclick="waterFormula.closeSettings()">Close</button>
+            </div>
+          </div>
+
+          <!-- Bill Summary Calculation Box -->
+          <div class="calc-summary-box">
+            <div class="calc-row">
+              <span>Total Units (Elec + Water):</span>
+              <strong id="calc-total-units">0 Units</strong>
+            </div>
+            <div class="calc-row">
+              <span>Meter Bill (Units &times; ₹<span id="calc-rate-display">8</span>):</span>
+              <strong id="calc-meter-bill">₹0.00</strong>
+            </div>
+            <div class="calc-row">
+              <span>Monthly Base Rent:</span>
+              <strong id="calc-rent-display">₹0.00</strong>
+            </div>
+            <div class="calc-row" style="border-top:1px dashed var(--border-color);padding-top:0.5rem;margin-top:0.25rem">
+              <span id="calc-water-formula" style="font-size:0.75rem;color:var(--text-muted);font-style:italic">Water formula: Curr − Prev</span>
+            </div>
+          </div>
+
+          <!-- Financial Adjustments & Payment -->
+          <div class="form-section-title"><i data-feather="dollar-sign"></i> Rent & Payments</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="input-monthly-rent">Rent Amount (₹) *</label>
+              <input type="number" step="0.01" id="input-monthly-rent" class="form-control meter-calc" required />
+            </div>
+            <div class="form-group">
+              <label for="input-extra-charge">Extra Charges (₹)</label>
+              <input type="number" step="0.01" id="input-extra-charge" class="form-control meter-calc" value="0" />
+            </div>
+            <div class="form-group">
+              <label for="input-total-bill">Calculated Total Bill (₹)</label>
+              <input type="number" step="0.01" id="input-total-bill" class="form-control highlight-input" readonly />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="input-received-amount">Amount Received (₹)</label>
+              <input type="number" step="0.01" id="input-received-amount" class="form-control meter-calc" value="0" />
+            </div>
+            <div class="form-group">
+              <label for="input-received-date">Received Date</label>
+              <input type="date" id="input-received-date" class="form-control" />
+            </div>
+            <div class="form-group">
+              <label for="input-balance">Balance Due (₹)</label>
+              <input type="number" step="0.01" id="input-balance" class="form-control" readonly />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="input-remark">Remark / Notes</label>
+            <input type="text" id="input-remark" class="form-control" placeholder="e.g. Paid via PhonePe, Cash received" />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-billing">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Billing Record</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Receipt & Bill View Modal (Printable / WhatsApp Share) -->
+  <div class="modal-overlay hidden" id="modal-receipt">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3>Rent & Utility Receipt</h3>
+        <button class="btn-close" id="btn-close-receipt-modal">&times;</button>
+      </div>
+      <div class="modal-body" id="receipt-printable-area">
+        <!-- Dynamic printable receipt -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-whatsapp-share"><i data-feather="message-circle"></i> Send on WhatsApp</button>
+        <button class="btn btn-primary" id="btn-print-receipt"><i data-feather="printer"></i> Print / Save PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Sheets Sync Config Modal -->
+  <div class="modal-overlay hidden" id="modal-gsheets-sync">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3><i data-feather="grid"></i> Google Sheets Live Bi-Directional Sync</h3>
+        <button class="btn-close" id="btn-close-gsheets-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Connect your Google Sheet so all tenants, rent, electricity, and water meter updates sync live to your Google Sheet automatically!</p>
+        
+        <div class="form-group">
+          <label for="input-gsheets-url">Google Web App Script URL</label>
+          <input type="text" id="input-gsheets-url" class="form-control" placeholder="https://script.google.com/macros/s/AKfycb.../exec" />
+        </div>
+
+        <div class="alert alert-info">
+          <i data-feather="info"></i>
+          <div>
+            <strong>How to get your Web App URL (Takes 1 minute):</strong>
+            <ol>
+              <li>Open your Google Sheet -> Click <strong>Extensions -> Apps Script</strong>.</li>
+              <li>Paste the code from <code>googleAppsScript.gs</code> in this repository.</li>
+              <li>Click <strong>Deploy -> New deployment</strong> (Select <em>Web app</em>, Access: <em>Anyone</em>).</li>
+              <li>Copy the Web App URL and paste it above!</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-disconnect-gsheets">Disconnect</button>
+        <button class="btn btn-primary" id="btn-save-gsheets">Save & Connect Sheet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cloud Sync Config Modal (Option A - Supabase) -->
+  <div class="modal-overlay hidden" id="modal-cloud-sync">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3><i data-feather="cloud"></i> Supabase Free Cloud Sync</h3>
+        <button class="btn-close" id="btn-close-sync-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Connect your free <strong>Supabase</strong> project to automatically back up tenant records to the cloud and enable real-time access across phone & laptop.</p>
+        
+        <div class="form-group">
+          <label for="input-supabase-url">Supabase Project URL</label>
+          <input type="text" id="input-supabase-url" class="form-control" placeholder="https://your-project.supabase.co" />
+        </div>
+
+        <div class="form-group">
+          <label for="input-supabase-key">Supabase Anon Key</label>
+          <input type="password" id="input-supabase-key" class="form-control" placeholder="eyJhbGciOiJIUzI1Ni..." />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-disconnect-cloud">Disconnect Cloud</button>
+        <button class="btn btn-primary" id="btn-save-cloud">Save & Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Scripts -->
+  <script src="js/types.js"></script>
+  <script src="js/storageService.js"></script>
+  <script src="js/googleSheetsService.js"></script>
+  <script src="js/excelService.js"></script>
+  <script src="js/pinAuth.js"></script>
+  <script src="js/waterFormula.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
