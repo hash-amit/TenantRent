@@ -899,27 +899,46 @@ body {
   border: 1px solid var(--info);
 }
 
-/* Print Styles */
+#print-receipt-container {
+  display: none;
+}
+
+/* Print Styles — 100% Bulletproof Single-Page A4 Receipt */
 @media print {
-  body {
-    background: white !important;
-    color: black !important;
+  @page {
+    size: A4 portrait;
+    margin: 5mm;
   }
-  .navbar, .app-footer, .modal-footer, .btn, .view-toggle-pill, .modal-header .btn-close {
+  html, body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-family: 'Plus Jakarta Sans', Arial, sans-serif !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  body > *:not(#print-receipt-container) {
     display: none !important;
   }
-  .modal-overlay {
+  #print-receipt-container {
+    display: block !important;
     position: static !important;
-    background: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
-  .modal-container {
-    box-shadow: none !important;
-    border: none !important;
-    max-width: 100% !important;
+  #print-receipt-container * {
+    visibility: visible !important;
   }
-  .receipt-box {
-    border: 2px solid #000 !important;
-    background: white !important;
+  a {
+    color: #4f46e5 !important;
+    text-decoration: underline !important;
   }
 }
 

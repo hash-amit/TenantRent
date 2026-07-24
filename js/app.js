@@ -217,7 +217,7 @@ var TenantRentApp = /** @class */ (function () {
       self._render();
     });
 
-    _on("btn-share-tenant-link", "click", function () { self._copyShareLink(); });
+    _on("btn-send-bill-whatsapp", "click", function () { self._sendLatestBillWhatsApp(); });
 
     _on("btn-close-receipt-modal", "click", function () {
       var modal = document.getElementById("modal-receipt");
@@ -567,78 +567,247 @@ var TenantRentApp = /** @class */ (function () {
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // EVENT WIRING
+  // ═══════════════════════════════════════════════════════════════════════════
+  TenantRentApp.prototype._initEvents = function () {
+    var self = this;
+    function _on(id, ev, fn) { var el = document.getElementById(id); if (el) el.addEventListener(ev, fn); }
+
+    _on("btn-add-tenant", "click", function () { self._openTenantModal(); });
+    _on("form-tenant", "submit", function (e) { self._handleSaveTenant(e); });
+    _on("btn-close-tenant-modal", "click", function () { self._closeTenantModal(); });
+
+    _on("btn-add-bill", "click", function () { self._openBillingModal(); });
+    _on("form-billing", "submit", function (e) { self._handleSaveBilling(e); });
+    _on("btn-close-billing-modal", "click", function () { self._closeBillingModal(); });
+    _on("input-elec-before", "input", function () { self._recalcBill(); });
+    _on("input-elec-current", "input", function () { self._recalcBill(); });
+    _on("input-water-before", "input", function () { self._recalcBill(); });
+    _on("input-water-current", "input", function () { self._recalcBill(); });
+    _on("input-monthly-rent", "input", function () { self._recalcBill(); });
+    _on("input-extra-charge", "input", function () { self._recalcBill(); });
+    _on("input-received-amount", "input", function () { self._recalcBill(); });
+    _on("btn-send-bill-whatsapp", "click", function () { self._sendLatestBillWhatsApp(); });
+
+    _on("btn-close-receipt-modal", "click", function () {
+      var modal = document.getElementById("modal-receipt");
+      if (modal) modal.classList.add("hidden");
+    });
+    _on("btn-print-receipt", "click", function () { window.print(); });
+    _on("btn-whatsapp-share", "click", function () { self._sendWhatsApp(); });
+  };
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DATA PERSISTENCE HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
+  TenantRentApp.prototype._saveAll = function () {
+    storageService.saveTenants(this.arrTenants);
+    if (typeof pinAuth !== "undefined") pinAuth.populateTenantDropdown(this.arrTenants);
+  };
+
+  TenantRentApp.prototype._saveTenant = async function (pTenant) {
+    storageService.saveTenants(this.arrTenants);
+    if (typeof pinAuth !== "undefined") pinAuth.populateTenantDropdown(this.arrTenants);
+    if (googleSheetsService.bIsConnected) {
+      await googleSheetsService.upsertTenant(pTenant);
+    }
+  };
+
+  TenantRentApp.prototype._deleteTenantRemote = async function (psTenantId) {
+    storageService.saveTenants(this.arrTenants);
+    if (typeof pinAuth !== "undefined") pinAuth.populateTenantDropdown(this.arrTenants);
+    if (googleSheetsService.bIsConnected) {
+      await googleSheetsService.deleteTenant(psTenantId);
+    }
+  };
+
+  TenantRentApp.prototype._saveBilling = async function (pRecord) {
+    storageService.saveTenants(this.arrTenants);
+    if (googleSheetsService.bIsConnected) {
+      await googleSheetsService.upsertBilling(pRecord);
+    }
+  };
+
+  TenantRentApp.prototype._deleteBillingRemote = async function (psRecordId) {
+    storageService.saveTenants(this.arrTenants);
+    if (googleSheetsService.bIsConnected) {
+      await googleSheetsService.deleteBilling(psRecordId);
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // RECEIPT & WHATSAPP
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype.openReceipt = function (psRecordId) {
     var self = this;
     var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === self.sActiveTenantId; });
+    if (!objTenant && this.activeReceiptTenant) objTenant = this.activeReceiptTenant;
     if (!objTenant) return;
+
     var objRec = (objTenant.billing_records || []).find(function (r) { return r.record_id === psRecordId; });
+    if (!objRec && this.activeReceiptRecord) objRec = this.activeReceiptRecord;
     if (!objRec) return;
 
     this.activeReceiptRecord = objRec;
     this.activeReceiptTenant = objTenant;
 
-    document.getElementById("receipt-printable-area").innerHTML =
-      "<div class=\"receipt-box\">" +
-        "<div class=\"receipt-header\">" +
-          "<h2>RENT & UTILITY STATEMENT</h2>" +
-          "<p><strong>" + objTenant.room + "</strong> \u2014 " + objTenant.name + "</p>" +
-          "<p><small>Period: " + formatDateDisplay(objRec.period_from) + " to " + formatDateDisplay(objRec.period_to) + "</small></p>" +
+    var bIsAdmin = (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "admin");
+    var btnWA = document.getElementById("btn-whatsapp-share");
+    if (btnWA) btnWA.style.display = bIsAdmin ? "inline-flex" : "none";
+
+    var sSiteUrl = "https://hash-amit.github.io/TenantRent/";
+
+    var sHtml =
+      "<div style='background:#ffffff;color:#0f172a;padding:1rem 1.25rem;border:1px solid #cbd5e1;border-radius:12px;max-width:720px;margin:0 auto;font-family:\"Plus Jakarta Sans\",sans-serif;box-sizing:border-box'>" +
+        "<div style='display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #6366f1;padding-bottom:0.5rem;margin-bottom:0.6rem'>" +
+          "<div>" +
+            "<h1 style='margin:0;font-size:1.35rem;font-weight:800;color:#4f46e5;display:flex;align-items:center;gap:6px'>" +
+              "<i data-feather=\"home\" style=\"width:20px;height:20px\"></i> TenantRent" +
+            "</h1>" +
+            "<p style='margin:2px 0 0;font-size:0.75rem;color:#64748b'>Smart Rent &amp; Utility Statement</p>" +
+          "</div>" +
+          "<div style='text-align:right'>" +
+            "<span style='font-size:0.7rem;font-weight:700;letter-spacing:0.5px;color:#64748b;text-transform:uppercase'>Receipt ID</span>" +
+            "<div style='font-size:0.85rem;font-weight:800;color:#0f172a'>#" + (objRec.record_id || "REC") + "</div>" +
+            "<div style='font-size:0.7rem;color:#64748b'>" + formatDateDisplay(objRec.created_at ? objRec.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10)) + "</div>" +
+          "</div>" +
         "</div>" +
-        "<table class=\"receipt-table\">" +
-          "<tr><td>Electricity Reading:</td><td style=\"text-align:right\">" + objRec.elec_prev + " \u2192 " + objRec.elec_curr + " (<strong>" + objRec.elec_units + " units</strong>)</td></tr>" +
-          "<tr><td>Water Reading:</td><td style=\"text-align:right\">" + objRec.water_prev + " \u2192 " + objRec.water_curr + " (<strong>" + objRec.water_units + " units</strong>)</td></tr>" +
-          "<tr><td>Meter Charges (@ \u20b9" + objRec.unit_rate + "/unit):</td><td style=\"text-align:right\">" + formatCurrency(objRec.meter_charges) + "</td></tr>" +
-          "<tr><td>Monthly Rent:</td><td style=\"text-align:right\">" + formatCurrency(objRec.rent) + "</td></tr>" +
-          (objRec.extra > 0 ? "<tr><td>Extra Charges:</td><td style=\"text-align:right\">" + formatCurrency(objRec.extra) + "</td></tr>" : "") +
-          "<tr class=\"total-row\"><td><strong>TOTAL DUE:</strong></td><td style=\"text-align:right\"><strong>" + formatCurrency(objRec.total_due) + "</strong></td></tr>" +
-          "<tr><td>Paid Amount:</td><td style=\"text-align:right;color:var(--success)\">" + formatCurrency(objRec.paid_amount) + " (" + (objRec.paid_date || "Pending") + ")</td></tr>" +
-          "<tr><td>Balance:</td><td style=\"text-align:right;color:var(--danger);font-weight:700\">" + formatCurrency(objRec.balance) + "</td></tr>" +
+
+        "<div style='display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;background:#f8fafc;padding:0.6rem 0.85rem;border-radius:8px;margin-bottom:0.6rem;border:1px solid #e2e8f0;font-size:0.8rem'>" +
+          "<div>" +
+            "<span style='color:#64748b;font-size:0.7rem;display:block'>TENANT NAME</span>" +
+            "<strong style='color:#0f172a;font-size:0.9rem'>" + objTenant.name + "</strong>" +
+            "<div style='color:#475569;margin-top:2px'>📞 " + (objTenant.phone || "—") + "</div>" +
+          "</div>" +
+          "<div>" +
+            "<span style='color:#64748b;font-size:0.7rem;display:block'>ROOM / HOUSE LABEL</span>" +
+            "<strong style='color:#0f172a;font-size:0.9rem'>" + objTenant.room + "</strong>" +
+            "<div style='color:#475569;margin-top:2px'>📅 Move-in: " + formatDateDisplay(objTenant.move_in_date) + "</div>" +
+          "</div>" +
+        "</div>" +
+
+        "<div style='background:#e0e7ff;color:#3730a3;padding:0.4rem 0.85rem;border-radius:6px;font-size:0.8rem;font-weight:700;margin-bottom:0.6rem;display:flex;justify-content:space-between'>" +
+          "<span>Billing Cycle:</span>" +
+          "<span>" + formatDateDisplay(objRec.period_from) + " &nbsp;to&nbsp; " + formatDateDisplay(objRec.period_to) + "</span>" +
+        "</div>" +
+
+        "<table style='width:100%;border-collapse:collapse;margin-bottom:0.6rem;font-size:0.8rem'>" +
+          "<thead>" +
+            "<tr style='background:#f1f5f9;color:#334155;text-align:left'>" +
+              "<th style='padding:0.4rem 0.6rem;border-bottom:1px solid #cbd5e1'>Item Description</th>" +
+              "<th style='padding:0.4rem 0.6rem;border-bottom:1px solid #cbd5e1'>Readings / Details</th>" +
+              "<th style='padding:0.4rem 0.6rem;border-bottom:1px solid #cbd5e1;text-align:right'>Rate</th>" +
+              "<th style='padding:0.4rem 0.6rem;border-bottom:1px solid #cbd5e1;text-align:right'>Amount (₹)</th>" +
+            "</tr>" +
+          "</thead>" +
+          "<tbody>" +
+            "<tr>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0'>⚡ Electricity Meter</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;color:#475569'>" + objRec.elec_prev + " → " + objRec.elec_curr + " (<strong>" + objRec.elec_units + " units</strong>)</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right'>₹" + objRec.unit_rate + "</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600'>" + formatCurrency(objRec.elec_units * objRec.unit_rate) + "</td>" +
+            "</tr>" +
+            "<tr>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0'>💧 Water Meter</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;color:#475569'>" + objRec.water_prev + " → " + objRec.water_curr + " (<strong>" + objRec.water_units + " units</strong>)</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right'>₹" + objRec.unit_rate + "</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600'>" + formatCurrency(objRec.water_units * objRec.unit_rate) + "</td>" +
+            "</tr>" +
+            "<tr>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0'>🏠 Base Rent</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;color:#475569'>Monthly Base Charge</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right'>—</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600'>" + formatCurrency(objRec.rent) + "</td>" +
+            "</tr>" +
+            (objRec.extra > 0 ?
+            "<tr>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0'>➕ Extra Charges</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;color:#475569'>Miscellaneous</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right'>—</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600'>" + formatCurrency(objRec.extra) + "</td>" +
+            "</tr>" : "") +
+            "<tr style='background:#f8fafc;font-weight:800;font-size:0.9rem'>" +
+              "<td colspan='3' style='padding:0.5rem 0.6rem;border-top:2px solid #cbd5e1;text-align:right'>TOTAL DUE AMOUNT:</td>" +
+              "<td style='padding:0.5rem 0.6rem;border-top:2px solid #cbd5e1;text-align:right;color:#4f46e5'>" + formatCurrency(objRec.total_due) + "</td>" +
+            "</tr>" +
+          "</tbody>" +
         "</table>" +
-        "<div style=\"margin-top:1rem;padding:0.75rem;background:var(--bg-surface);border-radius:var(--radius-md);text-align:center;font-size:0.8rem\">" +
-          "<p><strong>Status: " + objRec.payment_status.toUpperCase() + "</strong></p>" +
-          "<p>" + (objRec.notes ? "Note: " + objRec.notes : "Thank you for your prompt payment!") + "</p>" +
+
+        "<div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem;background:#f1f5f9;padding:0.6rem;border-radius:8px;text-align:center;font-size:0.75rem;margin-bottom:0.6rem'>" +
+          "<div>" +
+            "<span style='color:#64748b;display:block'>AMOUNT RECEIVED</span>" +
+            "<strong style='color:#10b981;font-size:0.9rem'>" + formatCurrency(objRec.paid_amount) + "</strong>" +
+            "<div style='font-size:0.68rem;color:#64748b'>" + (objRec.paid_date ? formatDateDisplay(objRec.paid_date) : "—") + "</div>" +
+          "</div>" +
+          "<div>" +
+            "<span style='color:#64748b;display:block'>BALANCE DUE</span>" +
+            "<strong style='color:" + (objRec.balance > 0 ? "#ef4444" : "#10b981") + ";font-size:0.9rem'>" + formatCurrency(objRec.balance) + "</strong>" +
+          "</div>" +
+          "<div>" +
+            "<span style='color:#64748b;display:block'>PAYMENT STATUS</span>" +
+            "<span style='display:inline-block;padding:2px 8px;border-radius:12px;font-weight:700;margin-top:2px;background:" + (objRec.payment_status === "Paid" ? "#d1fae5;color:#065f46" : (objRec.payment_status === "Pending" ? "#fee2e2;color:#991b1b" : "#fef3c7;color:#92400e")) + "'>" + objRec.payment_status.toUpperCase() + "</span>" +
+          "</div>" +
+        "</div>" +
+
+        (objRec.notes ? "<p style='font-size:0.75rem;color:#475569;margin:0 0 0.6rem;font-style:italic'>Note: " + objRec.notes + "</p>" : "") +
+
+        "<div style='background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:0.5rem 0.6rem;text-align:center;font-size:0.75rem;color:#475569'>" +
+          "👉 <a href='" + sSiteUrl + "' target='_blank' style='color:#4f46e5;font-weight:700;text-decoration:underline'>Click here to view your past bills &amp; payment history online</a>" +
         "</div>" +
       "</div>";
+
+    var elScreenArea = document.getElementById("receipt-printable-area");
+    if (elScreenArea) elScreenArea.innerHTML = sHtml;
+
+    var elPrintArea = document.getElementById("print-receipt-container");
+    if (elPrintArea) elPrintArea.innerHTML = sHtml;
 
     document.getElementById("modal-receipt").classList.remove("hidden");
     if (window.feather) feather.replace();
   };
 
-  TenantRentApp.prototype._sendWhatsApp = function () {
-    if (!this.activeReceiptRecord || !this.activeReceiptTenant) return;
+  TenantRentApp.prototype._sendWhatsApp = function (pRecord) {
+    var r = pRecord || this.activeReceiptRecord;
     var t = this.activeReceiptTenant;
-    var r = this.activeReceiptRecord;
+    if (!t && this.arrTenants) {
+      t = this.arrTenants.find(function (x) { return x.tenant_id === (r ? r.tenant_id : null); });
+    }
+    if (!r || !t) { alert("No billing record selected."); return; }
+
     var sPhone = (t.phone || "").replace(/[^0-9]/g, "");
+    var sSiteUrl = "https://hash-amit.github.io/TenantRent/";
     var sMsg =
-      "*RENT & UTILITY BILL* \uD83C\uDFE0\n" +
-      "Room: " + t.room + "\nTenant: " + t.name + "\n" +
+      "*RENT & UTILITY BILL STATEMENT* 🏠\n" +
+      "Room: " + (t.room || "—") + "\n" +
+      "Tenant: " + (t.name || "—") + "\n" +
       "Period: " + formatDateDisplay(r.period_from) + " to " + formatDateDisplay(r.period_to) + "\n\n" +
-      "\u26A1 *Electricity*: " + r.elec_prev + " \u2192 " + r.elec_curr + " (" + r.elec_units + " units)\n" +
-      "\uD83D\uDCA7 *Water*: " + r.water_prev + " \u2192 " + r.water_curr + " (" + r.water_units + " units)\n" +
-      "\uD83D\uDCC8 *Meter Bill*: " + formatCurrency(r.meter_charges) + " @ \u20b9" + r.unit_rate + "/unit\n" +
-      "\uD83C\uDFE0 *Rent*: " + formatCurrency(r.rent) + "\n" +
-      "\uD83D\uDCB5 *TOTAL DUE*: *" + formatCurrency(r.total_due) + "*\n\n" +
-      "\u2705 Paid: " + formatCurrency(r.paid_amount) + "\n" +
-      "\u26A0\uFE0F Balance: *" + formatCurrency(r.balance) + "*\n" +
-      "Status: *" + r.payment_status.toUpperCase() + "*\n\nPlease make payment at your earliest. Thank you!";
+      "⚡ *Electricity*: " + r.elec_prev + " → " + r.elec_curr + " (" + r.elec_units + " units)\n" +
+      "💧 *Water*: " + r.water_prev + " → " + r.water_curr + " (" + r.water_units + " units)\n" +
+      "📊 *Meter Charges*: " + formatCurrency(r.meter_charges) + " (@ ₹" + r.unit_rate + "/unit)\n" +
+      "🏠 *Base Rent*: " + formatCurrency(r.rent) + "\n" +
+      (r.extra > 0 ? "➕ *Extra Charges*: " + formatCurrency(r.extra) + "\n" : "") +
+      "💵 *TOTAL DUE*: *" + formatCurrency(r.total_due) + "*\n\n" +
+      "✅ Received: " + formatCurrency(r.paid_amount) + (r.paid_date ? " (" + formatDateDisplay(r.paid_date) + ")" : "") + "\n" +
+      "⚠️ Balance: *" + formatCurrency(r.balance) + "*\n" +
+      "Status: *" + (r.payment_status || "Pending").toUpperCase() + "*\n\n" +
+      "👉 *Click here to view your past bills & payment history online*:\n" + sSiteUrl + "\n\n" +
+      "Please make payment at your earliest. Thank you!";
+
     window.open("https://wa.me/" + (sPhone.length === 10 ? "91" + sPhone : sPhone) + "?text=" + encodeURIComponent(sMsg), "_blank");
   };
 
-  TenantRentApp.prototype._copyShareLink = function () {
+  TenantRentApp.prototype._sendLatestBillWhatsApp = function () {
     var self = this;
     var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === self.sActiveTenantId; });
-    if (!objTenant) return;
-    var sBaseUrl = window.location.origin + window.location.pathname;
-    var sHash = "#tenant/" + (objTenant.share_key || objTenant.tenant_id);
-    var sLink = sBaseUrl + sHash;
-    if (googleSheetsService.bIsConnected && googleSheetsService.getWebAppUrl()) {
-      sLink = sBaseUrl + "?gs_url=" + encodeURIComponent(googleSheetsService.getWebAppUrl()) + sHash;
-    }
-    navigator.clipboard.writeText(sLink)
-      .then(function () { alert("Tenant passbook link copied!\n\n" + sLink); })
-      .catch(function () { alert("Link: " + sLink); });
+    if (!objTenant) { alert("Please select a tenant profile first."); return; }
+    var arrRecs = objTenant.billing_records || [];
+    if (arrRecs.length === 0) { alert("No billing records found for this tenant."); return; }
+
+    var objLatest = arrRecs[arrRecs.length - 1];
+    this.activeReceiptRecord = objLatest;
+    this.activeReceiptTenant = objTenant;
+    this._sendWhatsApp(objLatest);
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -811,6 +980,10 @@ var TenantRentApp = /** @class */ (function () {
   TenantRentApp.prototype._renderPortal = function () {
     var self = this;
     var bIsTenantUser = (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "tenant");
+    var bIsAdmin      = (typeof pinAuth !== "undefined" && pinAuth.getLoggedInRole() === "admin");
+
+    var btnSendBill = document.getElementById("btn-send-bill-whatsapp");
+    if (btnSendBill) btnSendBill.style.display = bIsAdmin ? "inline-flex" : "none";
 
     var sel = document.getElementById("select-portal-tenant");
     if (sel) {
