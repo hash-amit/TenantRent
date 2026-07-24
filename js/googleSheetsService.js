@@ -85,17 +85,23 @@ var GoogleSheetsService = /** @class */ (function () {
   };
 
   // ── READ: Fetch all tenants + billing records + admin config from Google Sheets ───────────
-  GoogleSheetsService.prototype.fetchAll = async function () {
+  GoogleSheetsService.prototype.fetchAll = async function (iMaxAttempts) {
     if (!this.bIsConnected) return null;
-    try {
-      var response = await fetch(this.sWebAppUrl);
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      var json = await response.json();
-      if (json && json.status === "success") {
-        return json; // returns { data: arrTenants, admin_config: objAdminConfig }
+    var iAttempts = iMaxAttempts || 3;
+    for (var iAttempt = 1; iAttempt <= iAttempts; iAttempt++) {
+      try {
+        var response = await fetch(this.sWebAppUrl);
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        var json = await response.json();
+        if (json && json.status === "success") {
+          return json; // returns { data: arrTenants, admin_config: objAdminConfig }
+        }
+      } catch (err) {
+        console.warn("GoogleSheetsService.fetchAll attempt " + iAttempt + " failed:", err);
+        if (iAttempt < iAttempts) {
+          await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+        }
       }
-    } catch (err) {
-      console.warn("GoogleSheetsService.fetchAll:", err);
     }
     return null;
   };

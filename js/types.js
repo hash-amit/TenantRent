@@ -15,14 +15,10 @@ function generateShareKey() {
   return "SK" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
-// Simple pin hash helper (consistent with pinAuth)
+// Simple pin clean helper (returns plain 4-digit PIN string)
 function hashPin(psPin) {
-  var iHash = 0;
-  for (var i = 0; i < psPin.length; i++) {
-    iHash = ((iHash << 5) - iHash) + psPin.charCodeAt(i);
-    iHash |= 0;
-  }
-  return "h_" + Math.abs(iHash).toString(16);
+  var sClean = (psPin || "1234").toString().replace(/^h_/, "").trim();
+  return (sClean === "12401f" || !sClean) ? "1234" : sClean;
 }
 
 // ─── Factory: create a blank tenant object ────────────────────────────────────
@@ -39,7 +35,8 @@ function createTenant(pOverrides) {
     meter_rate:     8,
     share_key:      generateShareKey(),
     status:         "Active",
-    pin_hash:       hashPin("1234"), // Default PIN is 1234 for all new tenants
+    pin:            "1234",
+    pin_hash:       "1234", // Plain text PIN (default 1234)
     created_at:     new Date().toISOString(),
     billing_records: []
   };

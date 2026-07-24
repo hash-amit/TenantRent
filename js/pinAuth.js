@@ -20,8 +20,8 @@ var SESSION_DURATION_MS     = 8 * 60 * 60 * 1000;              // 8 hours
 var DEFAULT_PIN             = "1234";
 
 function hashPin(psPin) {
-  var sClean = (psPin || "1234").toString().replace(/^h_/, "").trim();
-  return sClean === "12401f" ? "1234" : sClean;
+  var sClean = (psPin || DEFAULT_PIN).toString().replace(/^h_/, "").trim();
+  return (sClean === "12401f" || !sClean) ? DEFAULT_PIN : sClean;
 }
 
 var pinAuth = (function () {
@@ -33,12 +33,15 @@ var pinAuth = (function () {
   var _sLoggedInTenantId = null;
 
   // ── Internal Helpers ───────────────────────────────────────────────────────
-  function _getAdminPinHash() {
-    return localStorage.getItem(STORAGE_KEY_ADMIN_PIN) || hashPin(DEFAULT_PIN);
+  function _getAdminPin() {
+    var sRaw = localStorage.getItem(STORAGE_KEY_ADMIN_PIN) || DEFAULT_PIN;
+    var sClean = sRaw.toString().replace(/^h_/, "").trim();
+    return (sClean === "12401f" || !sClean) ? DEFAULT_PIN : sClean;
   }
 
   function _isAdminPinCorrect(psPin) {
-    return hashPin(psPin) === _getAdminPinHash();
+    var sInput = (psPin || "").toString().trim();
+    return sInput === _getAdminPin();
   }
 
   function _isSessionValid() {
@@ -167,8 +170,16 @@ var pinAuth = (function () {
 
     if (_sSelectedRole === "admin") {
       if (_isAdminPinCorrect(_sCurrentInputPin)) {
+        var sAdminPin = _getAdminPin();
         _startSession("admin", null);
         _unlockUI();
+
+        // Prompt admin to change default PIN ONLY if it's still 1234
+        if (sAdminPin === DEFAULT_PIN) {
+          setTimeout(function () {
+            alert("⚠️ Welcome Admin! Your default PIN is 1234. Please click the 🔒 icon in the header to change your PIN.");
+          }, 300);
+        }
       } else {
         _onWrongPin();
       }
@@ -188,15 +199,15 @@ var pinAuth = (function () {
         ? app.arrTenants.find(function (t) { return t.tenant_id === sTenantId; })
         : null;
 
-      var sExpectedPin = objTenant && (objTenant.pin || objTenant.pin_hash)
+      var sExpectedPin = (objTenant && (objTenant.pin || objTenant.pin_hash))
         ? hashPin(objTenant.pin || objTenant.pin_hash)
         : DEFAULT_PIN;
 
-      if (hashPin(_sCurrentInputPin) === sExpectedPin) {
+      if (_sCurrentInputPin.trim() === sExpectedPin) {
         _startSession("tenant", sTenantId);
         _unlockUI();
 
-        // Prompt tenant to change default PIN if it's still 1234
+        // Prompt tenant to change default PIN ONLY if it's still 1234
         if (sExpectedPin === DEFAULT_PIN) {
           setTimeout(function () {
             alert("⚠️ Welcome! Your default PIN is 1234. Please click the 🔒 icon in the header to change your PIN.");
@@ -213,7 +224,7 @@ var pinAuth = (function () {
     var errEl   = document.getElementById("pin-error");
     _sCurrentInputPin = "";
     _updateDots();
-    if (errEl) errEl.innerText = "Incorrect PIN. Default PIN is 1234.";
+    if (errEl) errEl.innerText = "Incorrect PIN. Please enter your 4-digit PIN.";
     if (pinCard) {
       pinCard.classList.add("pin-shake");
       setTimeout(function () { pinCard.classList.remove("pin-shake"); }, 400);
@@ -344,7 +355,7 @@ var pinAuth = (function () {
             : null;
 
           var sExpectedPin = objTenant && (objTenant.pin || objTenant.pin_hash) ? hashPin(objTenant.pin || objTenant.pin_hash) : DEFAULT_PIN;
-          if (hashPin(sCurrent) !== sExpectedPin) {
+          if (sCurrent !== sExpectedPin) {
             alert("Current PIN is incorrect.");
             return;
           }
@@ -363,9 +374,11 @@ var pinAuth = (function () {
     }
   }
 
-  function setAdminPinHash(psHash) {
-    if (psHash) {
-      localStorage.setItem(STORAGE_KEY_ADMIN_PIN, psHash);
+  function setAdminPin(psPin) {
+    if (psPin) {
+      var sClean = psPin.toString().replace(/^h_/, "").trim();
+      if (sClean === "12401f" || !sClean) sClean = DEFAULT_PIN;
+      localStorage.setItem(STORAGE_KEY_ADMIN_PIN, sClean);
     }
   }
 
@@ -374,7 +387,8 @@ var pinAuth = (function () {
     init:                   init,
     logout:                 logout,
     populateTenantDropdown: populateTenantDropdown,
-    setAdminPinHash:        setAdminPinHash,
+    setAdminPin:            setAdminPin,
+    setAdminPinHash:        setAdminPin,
     getLoggedInRole:        function () { return _sLoggedInRole; },
     getLoggedInTenantId:    function () { return _sLoggedInTenantId; },
     isLoggedIn:             function () { return _sLoggedInRole !== null; }

@@ -27,9 +27,20 @@ var TenantRentApp = /** @class */ (function () {
     // 1. Load from LocalStorage cache first
     this.arrTenants = storageService.getTenants();
 
+    // Populate login screen dropdown with initial cached tenants
+    if (typeof pinAuth !== "undefined") {
+      pinAuth.populateTenantDropdown(this.arrTenants);
+    }
+
+    var syncDot  = document.getElementById("login-sync-dot");
+    var syncText = document.getElementById("login-sync-text");
+
     // 2. If Google Sheets is connected, fetch live data
     if (googleSheetsService.bIsConnected) {
-      var jsonLive = await googleSheetsService.fetchAll();
+      if (syncDot)  syncDot.style.background = "#f59e0b";
+      if (syncText) syncText.innerText = "Syncing live data from Google Sheet...";
+
+      var jsonLive = await googleSheetsService.fetchAll(3);
       if (jsonLive !== null) {
         if (Array.isArray(jsonLive.data)) {
           this.arrTenants = jsonLive.data;
@@ -38,9 +49,10 @@ var TenantRentApp = /** @class */ (function () {
         if (jsonLive.admin_config) {
           var sPinVal = jsonLive.admin_config.admin_pin || jsonLive.admin_config.admin_pin_hash;
           if (sPinVal) {
-            if (sPinVal.indexOf("h_") === 0 || sPinVal === "12401f") sPinVal = "1234";
+            sPinVal = String(sPinVal).replace(/^h_/, "").trim();
+            if (sPinVal === "12401f" || !sPinVal) sPinVal = "1234";
             if (typeof pinAuth !== "undefined") {
-              pinAuth.setAdminPinHash(sPinVal);
+              pinAuth.setAdminPin(sPinVal);
             } else if (typeof STORAGE_KEY_ADMIN_PIN !== "undefined") {
               localStorage.setItem(STORAGE_KEY_ADMIN_PIN, sPinVal);
             }
@@ -53,11 +65,18 @@ var TenantRentApp = /** @class */ (function () {
             localStorage.setItem(STORAGE_KEY_WATER_FORMULA, JSON.stringify(cfg));
           }
         }
+        if (syncDot)  syncDot.style.background = "#10b981";
+        if (syncText) syncText.innerText = "✅ Synced with Google Sheet";
+      } else {
+        if (syncDot)  syncDot.style.background = "#3b82f6";
+        if (syncText) syncText.innerText = "ℹ️ Offline / Cached Data Active";
       }
+    } else {
+      if (syncDot)  syncDot.style.background = "#9ca3af";
+      if (syncText) syncText.innerText = "Local Mode";
     }
 
-
-    // Populate login screen dropdown
+    // Refresh login screen dropdown with live tenants
     if (typeof pinAuth !== "undefined") {
       pinAuth.populateTenantDropdown(this.arrTenants);
     }

@@ -173,7 +173,8 @@ function readAllTenants(wsTenants, wsBilling) {
       .map(function(b) { return rowToBillingObj(b); });
 
     var rawPin = val(row, TENANT_COLS.pin) || "1234";
-    if (rawPin.indexOf("h_") === 0) rawPin = "1234";
+    var sCleanPin = rawPin.replace(/^h_/, "").trim();
+    if (sCleanPin === "12401f" || !sCleanPin) sCleanPin = "1234";
 
     return {
       tenant_id:    sTenantId,
@@ -186,8 +187,8 @@ function readAllTenants(wsTenants, wsBilling) {
       meter_rate:   numVal(row, TENANT_COLS.meter_rate),
       share_key:    val(row, TENANT_COLS.share_key),
       status:       val(row, TENANT_COLS.status) || "Active",
-      pin:          rawPin,
-      pin_hash:     rawPin,
+      pin:          sCleanPin,
+      pin_hash:     sCleanPin,
       created_at:   val(row, TENANT_COLS.created_at),
       billing_records: arrRecords
     };
@@ -209,12 +210,12 @@ function readAdminConfig(wsAdmin) {
     var k = val(r, 0);
     var v = val(r, 1);
     if (k) {
-      config[k] = v;
-      if (k === "admin_pin_hash" && v) {
-        var cleanV = String(v).replace(/^h_/, "");
-        if (cleanV === "12401f") cleanV = "1234";
-        config["admin_pin"] = cleanV;
-        config["admin_pin_hash"] = cleanV;
+      var sCleanV = String(v).replace(/^h_/, "").trim();
+      if (sCleanV === "12401f" || !sCleanV) sCleanV = DEFAULT_ADMIN_PIN;
+      config[k] = sCleanV;
+      if (k === "admin_pin" || k === "admin_pin_hash") {
+        config["admin_pin"] = sCleanV;
+        config["admin_pin_hash"] = sCleanV;
       }
     }
   });
@@ -290,8 +291,8 @@ function doPost(e) {
 // ─── Upsert helpers ──────────────────────────────────────────────────────────
 function upsertTenant(ws, t) {
   var sNow = new Date().toISOString();
-  var sPin = (t.pin || t.pin_hash || "1234").toString().replace(/^h_/, "");
-  if (sPin === "12401f") sPin = "1234";
+  var sPin = (t.pin || t.pin_hash || "1234").toString().replace(/^h_/, "").trim();
+  if (sPin === "12401f" || !sPin) sPin = "1234";
 
   var newRow = [
     t.tenant_id, t.name, t.room, t.phone, t.move_in_date,
@@ -319,10 +320,11 @@ function updateAdminConfig(wsAdmin, objConfig) {
   var sNow = new Date().toISOString();
   for (var key in objConfig) {
     if (objConfig.hasOwnProperty(key)) {
-      var valStr = String(objConfig[key]);
-      upsertRow(wsAdmin, 0, key, [key, valStr, sNow]);
+      var sValStr = String(objConfig[key]).replace(/^h_/, "").trim();
+      if (sValStr === "12401f" || !sValStr) sValStr = "1234";
+      upsertRow(wsAdmin, 0, key, [key, sValStr, sNow]);
       if (key === "admin_pin") {
-        upsertRow(wsAdmin, 0, "admin_pin_hash", ["admin_pin_hash", valStr, sNow]);
+        upsertRow(wsAdmin, 0, "admin_pin_hash", ["admin_pin_hash", sValStr, sNow]);
       }
     }
   }
