@@ -135,15 +135,14 @@ var GoogleSheetsService = /** @class */ (function () {
   GoogleSheetsService.prototype._post = async function (pPayload) {
     if (!this.bIsConnected) return false;
     try {
-      await fetch(this.sWebAppUrl, {
+      var response = await fetch(this.sWebAppUrl, {
         method:  "POST",
-        mode:    "no-cors",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body:    JSON.stringify(pPayload)
       });
       return true;
     } catch (err) {
-      console.warn("GoogleSheetsService._post:", err);
+      console.warn("GoogleSheetsService._post error:", err);
       return false;
     }
   };

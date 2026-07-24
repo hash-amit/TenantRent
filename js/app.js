@@ -53,8 +53,6 @@ var TenantRentApp = /** @class */ (function () {
             if (sPinVal === "12401f" || !sPinVal) sPinVal = "1234";
             if (typeof pinAuth !== "undefined") {
               pinAuth.setAdminPin(sPinVal);
-            } else if (typeof STORAGE_KEY_ADMIN_PIN !== "undefined") {
-              localStorage.setItem(STORAGE_KEY_ADMIN_PIN, sPinVal);
             }
           }
           if (jsonLive.admin_config.water_formula_type && typeof STORAGE_KEY_WATER_FORMULA !== "undefined") {

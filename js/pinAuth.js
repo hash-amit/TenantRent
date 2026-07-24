@@ -12,7 +12,6 @@
  *    - Cannot switch tenants, see admin view, or view other tenants' records.
  */
 
-var STORAGE_KEY_ADMIN_PIN   = "tenantrent_v2_admin_pin";
 var STORAGE_KEY_AUTH_ROLE   = "tenantrent_v2_auth_role";      // "admin" | "tenant"
 var STORAGE_KEY_AUTH_TENANT = "tenantrent_v2_auth_tenant_id"; // tenant_id if role === "tenant"
 var STORAGE_KEY_SESSION_TS  = "tenantrent_v2_session_ts";
@@ -31,12 +30,16 @@ var pinAuth = (function () {
   var _sCurrentInputPin  = "";
   var _sLoggedInRole     = null;    // "admin" | "tenant" | null
   var _sLoggedInTenantId = null;
+  var _sAdminPin         = DEFAULT_PIN; // In-memory only (fetched live from Google Sheet)
+
+  // Clean up legacy localStorage PIN if present
+  try {
+    localStorage.removeItem("tenantrent_v2_admin_pin");
+  } catch (e) {}
 
   // ── Internal Helpers ───────────────────────────────────────────────────────
   function _getAdminPin() {
-    var sRaw = localStorage.getItem(STORAGE_KEY_ADMIN_PIN) || DEFAULT_PIN;
-    var sClean = sRaw.toString().replace(/^h_/, "").trim();
-    return (sClean === "12401f" || !sClean) ? DEFAULT_PIN : sClean;
+    return _sAdminPin || DEFAULT_PIN;
   }
 
   function _isAdminPinCorrect(psPin) {
@@ -337,38 +340,63 @@ var pinAuth = (function () {
           return;
         }
 
-        if (_sLoggedInRole === "admin") {
-          if (!_isAdminPinCorrect(sCurrent)) {
-            alert("Current Admin PIN is incorrect.");
-            return;
-          }
-          localStorage.setItem(STORAGE_KEY_ADMIN_PIN, sNew);
-          if (typeof googleSheetsService !== "undefined" && googleSheetsService.bIsConnected) {
-            await googleSheetsService.updateAdminConfig({ admin_pin: sNew, admin_pin_hash: sNew });
-          }
-          _closeModal();
-          alert("✅ Admin PIN updated successfully & synced to Google Sheet!");
-        } else if (_sLoggedInRole === "tenant" && _sLoggedInTenantId) {
+        var sOrigText = btnSave.innerText;
+        btnSave.disabled = true;
+        btnSave.innerText = "Saving to Google Sheet...";
 
-          var objTenant = (typeof app !== "undefined" && app.arrTenants)
-            ? app.arrTenants.find(function (t) { return t.tenant_id === _sLoggedInTenantId; })
-            : null;
-
-          var sExpectedPin = objTenant && (objTenant.pin || objTenant.pin_hash) ? hashPin(objTenant.pin || objTenant.pin_hash) : DEFAULT_PIN;
-          if (sCurrent !== sExpectedPin) {
-            alert("Current PIN is incorrect.");
-            return;
-          }
-
-          if (objTenant) {
-            objTenant.pin = sNew;
-            objTenant.pin_hash = sNew;
-            if (typeof app !== "undefined" && typeof app._saveTenant === "function") {
-              await app._saveTenant(objTenant);
+        try {
+          if (_sLoggedInRole === "admin") {
+            if (!_isAdminPinCorrect(sCurrent)) {
+              alert("Current Admin PIN is incorrect.");
+              btnSave.disabled = false;
+              btnSave.innerText = sOrigText;
+              return;
             }
+
+            if (typeof googleSheetsService !== "undefined" && googleSheetsService.bIsConnected) {
+              var bSuccess = await googleSheetsService.updateAdminConfig({ admin_pin: sNew, admin_pin_hash: sNew });
+              if (bSuccess) {
+                _sAdminPin = sNew;
+                _closeModal();
+                alert("✅ Admin PIN updated successfully & saved to Google Sheet!");
+              } else {
+                alert("⚠️ Failed to update Google Sheet. Please check your internet connection and try again.");
+              }
+            } else {
+              _sAdminPin = sNew;
+              _closeModal();
+              alert("✅ Admin PIN updated in local session.");
+            }
+          } else if (_sLoggedInRole === "tenant" && _sLoggedInTenantId) {
+
+            var objTenant = (typeof app !== "undefined" && app.arrTenants)
+              ? app.arrTenants.find(function (t) { return t.tenant_id === _sLoggedInTenantId; })
+              : null;
+
+            var sExpectedPin = objTenant && (objTenant.pin || objTenant.pin_hash) ? hashPin(objTenant.pin || objTenant.pin_hash) : DEFAULT_PIN;
+            if (sCurrent !== sExpectedPin) {
+              alert("Current PIN is incorrect.");
+              btnSave.disabled = false;
+              btnSave.innerText = sOrigText;
+              return;
+            }
+
+            if (objTenant) {
+              objTenant.pin = sNew;
+              objTenant.pin_hash = sNew;
+              if (typeof app !== "undefined" && typeof app._saveTenant === "function") {
+                await app._saveTenant(objTenant);
+              }
+            }
+            _closeModal();
+            alert("✅ Your PIN updated successfully & saved to Google Sheet!");
           }
-          _closeModal();
-          alert("✅ Your PIN updated successfully!");
+        } catch (err) {
+          console.error("Change PIN error:", err);
+          alert("⚠️ An error occurred while saving PIN: " + err.toString());
+        } finally {
+          btnSave.disabled = false;
+          btnSave.innerText = sOrigText;
         }
       });
     }
@@ -377,8 +405,7 @@ var pinAuth = (function () {
   function setAdminPin(psPin) {
     if (psPin) {
       var sClean = psPin.toString().replace(/^h_/, "").trim();
-      if (sClean === "12401f" || !sClean) sClean = DEFAULT_PIN;
-      localStorage.setItem(STORAGE_KEY_ADMIN_PIN, sClean);
+      _sAdminPin = (sClean === "12401f" || !sClean) ? DEFAULT_PIN : sClean;
     }
   }
 
