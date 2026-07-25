@@ -330,6 +330,7 @@ var TenantRentApp = /** @class */ (function () {
     var form = document.getElementById("form-tenant");
     form.reset();
     document.getElementById("input-meter-rate").value = "8";
+    document.getElementById("input-tenant-pin").value = "1234";
     document.getElementById("input-movein-date").value = new Date().toISOString().slice(0, 10);
 
     if (psTenantId) {
@@ -342,6 +343,7 @@ var TenantRentApp = /** @class */ (function () {
         document.getElementById("input-advance-deposit").value = obj.advance;
         document.getElementById("input-base-rent")      .value = obj.base_rent;
         document.getElementById("input-meter-rate")     .value = obj.meter_rate;
+        document.getElementById("input-tenant-pin")    .value = obj.pin || obj.pin_hash || "1234";
       }
     }
     document.getElementById("modal-tenant").classList.remove("hidden");
@@ -363,6 +365,7 @@ var TenantRentApp = /** @class */ (function () {
     var mAdvance = parseFloat(document.getElementById("input-advance-deposit").value) || 0;
     var mRent    = parseFloat(document.getElementById("input-base-rent")      .value) || 0;
     var mRate    = parseFloat(document.getElementById("input-meter-rate")     .value) || 8;
+    var sPin     = (document.getElementById("input-tenant-pin") .value.trim() || "1234").replace(/^h_/, "");
 
     var objTenant;
 
@@ -376,12 +379,15 @@ var TenantRentApp = /** @class */ (function () {
         objTenant.advance       = mAdvance;
         objTenant.base_rent     = mRent;
         objTenant.meter_rate    = mRate;
+        objTenant.pin           = sPin;
+        objTenant.pin_hash      = sPin;
       }
     } else {
       objTenant = createTenant({
         room: sRoom, name: sName, phone: sPhone,
         move_in_date: sMoveIn, advance: mAdvance,
-        base_rent: mRent, meter_rate: mRate
+        base_rent: mRent, meter_rate: mRate,
+        pin: sPin, pin_hash: sPin
       });
       this.arrTenants.push(objTenant);
       this.sActiveTenantId = objTenant.tenant_id;

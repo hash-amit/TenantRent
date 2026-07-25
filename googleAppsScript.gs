@@ -84,22 +84,24 @@ var DEFAULT_ADMIN_PIN = "1234";
 function setupSheets() {
   var sheets = ensureSheets();
   var wsTenants = sheets.tenants;
+  var wsBilling = sheets.billing;
 
-  // Force header row update
+  // Force header row updates
   wsTenants.getRange(1, 1, 1, TENANT_HEADERS.length).setValues([TENANT_HEADERS]).setFontWeight("bold");
+  wsBilling.getRange(1, 1, 1, BILLING_HEADERS.length).setValues([BILLING_HEADERS]).setFontWeight("bold");
 
-  // Fill default PIN "1234" for existing rows if empty
+  // ONLY fill default PIN "1234" for existing rows if the PIN cell is completely BLANK
   var iLastRow = wsTenants.getLastRow();
   if (iLastRow > 1) {
     for (var r = 2; r <= iLastRow; r++) {
-      var valPin = val(wsTenants.getRange(r, TENANT_COLS.pin + 1).getValue(), 0);
-      if (!valPin || valPin.indexOf("h_") === 0) {
+      var sCellVal = String(wsTenants.getRange(r, TENANT_COLS.pin + 1).getValue() || "").replace(/^h_/, "").trim();
+      if (sCellVal === "" || sCellVal === "12401f") {
         wsTenants.getRange(r, TENANT_COLS.pin + 1).setValue("1234");
       }
     }
   }
 
-  Logger.log("✅ All sheets updated! Column 'pin' created at Column K.");
+  Logger.log("✅ Sheet setup complete. Existing tenant PINs were safely PRESERVED!");
 }
 
 // ─── Ensure sheets exist with header rows & correct schema ────────────────────
