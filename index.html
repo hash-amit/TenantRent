@@ -1,22 +1,26 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TenantRent — Smart Rent & Utility Manager</title>
-  <meta name="description" content="Manage tenant rent, electricity bill units, water meter units, advance deposits, and shared bill receipts with zero domain cost." />
-  
+  <meta name="description"
+    content="Manage tenant rent, electricity bill units, water meter units, advance deposits, and shared bill receipts with zero domain cost." />
+
   <!-- Modern Font: Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
+
   <!-- Feather Icons -->
   <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
 
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="css/styles.css?v=2.5" />
 </head>
+
 <body>
 
   <!-- ── LANDING / DUAL-ROLE LOGIN SCREEN ─────────────────────────── -->
@@ -24,15 +28,17 @@
     <div class="lock-brand">
       <div class="lock-logo">
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
       </div>
       <h1>TenantRent</h1>
       <p>Select your login type to access</p>
-      <div id="login-sync-status" style="font-size:0.75rem;color:rgba(255,255,255,0.7);margin-top:0.5rem;display:flex;align-items:center;justify-content:center;gap:6px">
-        <span id="login-sync-dot" style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>
+      <div id="login-sync-status"
+        style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;display:flex;align-items:center;justify-content:center;gap:6px">
+        <span id="login-sync-dot"
+          style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>
         <span id="login-sync-text">Syncing live data from Google Sheet...</span>
       </div>
     </div>
@@ -50,8 +56,11 @@
 
       <!-- Tenant Select Dropdown (shown only when Tenant Login is selected) -->
       <div id="login-tenant-select-group" class="form-group hidden" style="width:100%;margin-bottom:0.25rem">
-        <label for="login-tenant-select" style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:4px;display:block">Select Your Room / Name:</label>
-        <select id="login-tenant-select" class="form-control" style="background:rgba(255,255,255,0.06);color:#fff;border-color:rgba(99,102,241,0.3)">
+        <label for="login-tenant-select"
+          style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:4px;display:block">Select Your
+          Room / Name:</label>
+        <select id="login-tenant-select" class="form-control"
+          style="background:var(--bg-surface-secondary);color:var(--text-primary);border-color:var(--border-color)">
           <!-- Dynamic options -->
         </select>
       </div>
@@ -94,7 +103,8 @@
       <div class="modal-body">
         <div class="form-group">
           <label for="input-current-pin">Current PIN</label>
-          <input type="password" id="input-current-pin" class="form-control" maxlength="4" placeholder="Enter current PIN" />
+          <input type="password" id="input-current-pin" class="form-control" maxlength="4"
+            placeholder="Enter current PIN" />
         </div>
         <div class="form-group">
           <label for="input-new-pin">New PIN (4 digits)</label>
@@ -102,9 +112,11 @@
         </div>
         <div class="form-group">
           <label for="input-confirm-pin">Confirm New PIN</label>
-          <input type="password" id="input-confirm-pin" class="form-control" maxlength="4" placeholder="Confirm new PIN" />
+          <input type="password" id="input-confirm-pin" class="form-control" maxlength="4"
+            placeholder="Confirm new PIN" />
         </div>
-        <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem">⚠️ Default PIN is <strong>1234</strong>. Please change it after your first login.</p>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem">⚠️ Default PIN is <strong>1234</strong>.
+          Please change it after your first login.</p>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btn-cancel-pin-modal">Cancel</button>
@@ -125,7 +137,7 @@
           <span class="brand-tag" id="user-role-badge">Admin Dashboard</span>
         </div>
       </div>
-      
+
       <div class="nav-actions">
         <!-- Theme Toggle -->
         <button id="btn-theme-toggle" class="btn btn-icon" title="Toggle Theme" aria-label="Toggle Theme">
@@ -160,7 +172,7 @@
 
     <!-- Main Content Area -->
     <main class="main-content" id="main-content">
-      
+
       <!-- ADMIN VIEW -->
       <section id="view-admin" class="view-section">
         <!-- Executive Financial Stats Bar -->
@@ -267,15 +279,17 @@
       <section id="view-tenant-portal" class="view-section hidden">
         <div class="card tenant-portal-header">
           <div>
-            <span class="portal-badge"><i data-feather="user"></i> Shared Tenant Passbook</span>
+            <span class="portal-badge"><i data-feather="user"></i> Tenant Passbook</span>
           </div>
           <div style="text-align:center">
             <h1 id="portal-tenant-name">Tenant Passbook</h1>
-            <p id="portal-room-name" style="font-size:0.95rem;opacity:0.9;margin-top:2px"><i data-feather="map-pin"></i> Loading...</p>
+            <p id="portal-room-name" style="font-size:0.95rem;opacity:0.9;margin-top:2px"><i data-feather="map-pin"></i>
+              Loading...</p>
           </div>
           <div class="portal-tenant-select" id="portal-controls-group">
             <label for="select-portal-tenant">Switch Tenant View:</label>
-            <select id="select-portal-tenant" class="form-control" style="background:#ffffff;color:#0f172a;border-radius:10px;font-weight:600;min-width:180px">
+            <select id="select-portal-tenant" class="form-control"
+              style="background:#ffffff;color:#0f172a;border-radius:10px;font-weight:600;min-width:180px">
               <!-- Tenant dropdown -->
             </select>
           </div>
@@ -293,7 +307,8 @@
               <h2 style="font-size:1.25rem;font-weight:700">Billing &amp; Payment History</h2>
             </div>
             <div class="header-right">
-              <button class="btn btn-primary" id="btn-send-bill-whatsapp" style="background:#25D366;color:#ffffff;border:none;font-weight:600;display:none">
+              <button class="btn btn-primary" id="btn-send-bill-whatsapp"
+                style="background:#25D366;color:#ffffff;border:none;font-weight:600;display:none">
                 <i data-feather="send"></i> Send Bill
               </button>
             </div>
@@ -325,7 +340,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      TenantRent © 2026 — Zero Domain &amp; Server Cost Management App | GitHub Pages Ready
+      TenantRent &copy; 2026 &mdash; Rent Tracking &amp; Tenant Passbook System
     </footer>
   </div>
 
@@ -344,7 +359,8 @@
           <div class="form-row">
             <div class="form-group">
               <label for="input-room-name">Room / House Name *</label>
-              <input type="text" id="input-room-name" class="form-control" placeholder="e.g. Ground Floor Front, Room 102" required />
+              <input type="text" id="input-room-name" class="form-control"
+                placeholder="e.g. Ground Floor Front, Room 102" required />
             </div>
             <div class="form-group">
               <label for="input-tenant-name">Tenant Full Name *</label>
@@ -370,7 +386,8 @@
             </div>
             <div class="form-group">
               <label for="input-base-rent">Base Monthly Rent (₹) *</label>
-              <input type="number" step="0.01" id="input-base-rent" class="form-control" placeholder="4000.00" required />
+              <input type="number" step="0.01" id="input-base-rent" class="form-control" placeholder="4000.00"
+                required />
             </div>
             <div class="form-group">
               <label for="input-meter-rate">Meter Rate per Unit (₹)</label>
@@ -413,15 +430,18 @@
           <div class="form-row">
             <div class="form-group">
               <label for="input-elec-before">Previous Reading (Before)</label>
-              <input type="number" step="0.1" id="input-elec-before" class="form-control meter-calc" placeholder="0.0" />
+              <input type="number" step="0.1" id="input-elec-before" class="form-control meter-calc"
+                placeholder="0.0" />
             </div>
             <div class="form-group">
               <label for="input-elec-current">Current Reading</label>
-              <input type="number" step="0.1" id="input-elec-current" class="form-control meter-calc" placeholder="0.0" />
+              <input type="number" step="0.1" id="input-elec-current" class="form-control meter-calc"
+                placeholder="0.0" />
             </div>
             <div class="form-group">
               <label for="input-elec-unit">Electricity Units</label>
-              <input type="number" step="0.01" id="input-elec-unit" class="form-control meter-calc" placeholder="0.0" readonly />
+              <input type="number" step="0.01" id="input-elec-unit" class="form-control meter-calc" placeholder="0.0"
+                readonly />
             </div>
           </div>
 
@@ -430,11 +450,13 @@
           <div class="form-row">
             <div class="form-group">
               <label for="input-water-before">Previous Reading (Before)</label>
-              <input type="number" step="0.1" id="input-water-before" class="form-control meter-calc" placeholder="0.0" />
+              <input type="number" step="0.1" id="input-water-before" class="form-control meter-calc"
+                placeholder="0.0" />
             </div>
             <div class="form-group">
               <label for="input-water-current">Current Reading</label>
-              <input type="number" step="0.1" id="input-water-current" class="form-control meter-calc" placeholder="0.0" />
+              <input type="number" step="0.1" id="input-water-current" class="form-control meter-calc"
+                placeholder="0.0" />
             </div>
             <div class="form-group">
               <label for="input-water-unit">
@@ -446,7 +468,8 @@
                   border:1px solid var(--primary)" title="Click to change water formula"
                   onclick="waterFormula.openSettings()">⚙ Formula</span>
               </label>
-              <input type="number" step="0.01" id="input-water-unit" class="form-control meter-calc" placeholder="auto-calculated" />
+              <input type="number" step="0.01" id="input-water-unit" class="form-control meter-calc"
+                placeholder="auto-calculated" />
             </div>
           </div>
 
@@ -466,17 +489,18 @@
                 <input type="radio" name="water-formula-type" id="radio-formula-divided" value="divided" />
                 <span><strong>Shared</strong> — (Current − Previous) ÷ <em>N</em> tenants</span>
               </label>
-              <div id="formula-divisor-row" class="hidden" style="display:flex;align-items:center;gap:0.5rem;padding-left:1.5rem">
+              <div id="formula-divisor-row" class="hidden"
+                style="display:flex;align-items:center;gap:0.5rem;padding-left:1.5rem">
                 <label style="font-size:0.8rem;white-space:nowrap">Number of tenants sharing the water meter:</label>
                 <input type="number" id="input-formula-divisor" class="form-control" min="1" max="20" step="1"
-                       style="width:80px" placeholder="2" />
+                  style="width:80px" placeholder="2" />
               </div>
             </div>
             <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
               <button type="button" class="btn btn-primary" style="padding:0.4rem 1rem;font-size:0.8rem"
-                      onclick="waterFormula.saveSettings()">Apply &amp; Save</button>
+                onclick="waterFormula.saveSettings()">Apply &amp; Save</button>
               <button type="button" class="btn btn-secondary" style="padding:0.4rem 1rem;font-size:0.8rem"
-                      onclick="waterFormula.closeSettings()">Close</button>
+                onclick="waterFormula.closeSettings()">Close</button>
             </div>
           </div>
 
@@ -494,13 +518,15 @@
               <span>Monthly Base Rent:</span>
               <strong id="calc-rent-display">₹0.00</strong>
             </div>
-            <div class="calc-row" style="border-top:1px dashed var(--border-color);padding-top:0.5rem;margin-top:0.25rem">
-              <span id="calc-water-formula" style="font-size:0.75rem;color:var(--text-muted);font-style:italic">Water formula: Curr − Prev</span>
+            <div class="calc-row"
+              style="border-top:1px dashed var(--border-color);padding-top:0.5rem;margin-top:0.25rem">
+              <span id="calc-water-formula" style="font-size:0.75rem;color:var(--text-muted);font-style:italic">Water
+                formula: Curr − Prev</span>
             </div>
           </div>
 
           <!-- Financial Adjustments & Payment -->
-          <div class="form-section-title"><i data-feather="dollar-sign"></i> Rent & Payments</div>
+          <div class="form-section-title"><span style="font-size:1.15rem;font-weight:800;color:var(--primary);line-height:1;margin-right:2px">₹</span> Rent &amp; Payments</div>
           <div class="form-row">
             <div class="form-group">
               <label for="input-monthly-rent">Rent Amount (₹) *</label>
@@ -509,6 +535,11 @@
             <div class="form-group">
               <label for="input-extra-charge">Extra Charges (₹)</label>
               <input type="number" step="0.01" id="input-extra-charge" class="form-control meter-calc" value="0" />
+            </div>
+            <div class="form-group">
+              <label for="input-extra-reason">Extra Charge Reason / Details</label>
+              <input type="text" id="input-extra-reason" class="form-control"
+                placeholder="e.g. Maintenance, Repair, Penalty" />
             </div>
             <div class="form-group">
               <label for="input-total-bill">Total Bill Amount (₹)</label>
@@ -533,7 +564,8 @@
 
           <div class="form-group">
             <label for="input-remark">Remark / Notes</label>
-            <input type="text" id="input-remark" class="form-control" placeholder="e.g. Paid via PhonePe, Cash received" />
+            <input type="text" id="input-remark" class="form-control"
+              placeholder="e.g. Paid via PhonePe, Cash received" />
           </div>
         </div>
 
@@ -556,7 +588,8 @@
         <!-- Dynamic printable receipt -->
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" id="btn-whatsapp-share"><i data-feather="message-circle"></i> Send on WhatsApp</button>
+        <button class="btn btn-secondary" id="btn-whatsapp-share"><i data-feather="message-circle"></i> Send on
+          WhatsApp</button>
         <button class="btn btn-primary" id="btn-print-receipt"><i data-feather="printer"></i> Print / Save PDF</button>
       </div>
     </div>
@@ -570,17 +603,22 @@
         <button class="btn-close" id="btn-close-gsheets-modal">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="modal-desc">Connect your Google Sheet so all tenants, rent, electricity, and water meter updates sync live to your Google Sheet automatically!</p>
-        
+        <p class="modal-desc">Connect your Google Sheet so all tenants, rent, electricity, and water meter updates sync
+          live to your Google Sheet automatically!</p>
+
         <div class="form-group">
           <label for="input-gsheets-url">Google Web App Script URL</label>
-          <input type="text" id="input-gsheets-url" class="form-control" placeholder="https://script.google.com/macros/s/AKfycb.../exec" />
+          <input type="text" id="input-gsheets-url" class="form-control"
+            placeholder="https://script.google.com/macros/s/AKfycb.../exec" />
         </div>
 
-        <div class="form-group" id="mobile-sync-container" style="display:none;margin-top:1rem;padding:0.85rem;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">
-          <label style="font-weight:600;display:flex;align-items:center;gap:0.4rem"><i data-feather="smartphone"></i> Automatic Mobile Sync Link</label>
+        <div class="form-group" id="mobile-sync-container"
+          style="display:none;margin-top:1rem;padding:0.85rem;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">
+          <label style="font-weight:600;display:flex;align-items:center;gap:0.4rem"><i data-feather="smartphone"></i>
+            Automatic Mobile Sync Link</label>
           <p style="font-size:0.85rem;color:var(--text-muted);margin:0.35rem 0 0.65rem">
-            Open this link on your mobile phone once to automatically connect Google Sheets without entering the URL again!
+            Open this link on your mobile phone once to automatically connect Google Sheets without entering the URL
+            again!
           </p>
           <button type="button" class="btn btn-secondary" id="btn-copy-mobile-sync-link" style="width:100%">
             <i data-feather="copy"></i> Copy Mobile Direct Sync Link
@@ -594,7 +632,8 @@
             <ol>
               <li>Open your Google Sheet -> Click <strong>Extensions -> Apps Script</strong>.</li>
               <li>Paste the code from <code>googleAppsScript.gs</code> in this repository.</li>
-              <li>Click <strong>Deploy -> New deployment</strong> (Select <em>Web app</em>, Access: <em>Anyone</em>).</li>
+              <li>Click <strong>Deploy -> New deployment</strong> (Select <em>Web app</em>, Access: <em>Anyone</em>).
+              </li>
               <li>Copy the Web App URL and paste it above!</li>
             </ol>
           </div>
@@ -611,12 +650,13 @@
   <div id="print-receipt-container"></div>
 
   <!-- App Scripts -->
-  <script src="js/types.js?v=2.5"></script>
-  <script src="js/storageService.js?v=2.5"></script>
-  <script src="js/googleSheetsService.js?v=2.5"></script>
-  <script src="js/pinAuth.js?v=2.5"></script>
-  <script src="js/waterFormula.js?v=2.5"></script>
-  <script src="js/app.js?v=2.5"></script>
+  <script src="js/types.js?v=3.1"></script>
+  <script src="js/storageService.js?v=3.1"></script>
+  <script src="js/googleSheetsService.js?v=3.1"></script>
+  <script src="js/pinAuth.js?v=3.1"></script>
+  <script src="js/waterFormula.js?v=3.1"></script>
+  <script src="js/app.js?v=3.1"></script>
 
 </body>
+
 </html>

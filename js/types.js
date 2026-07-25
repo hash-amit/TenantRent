@@ -62,6 +62,7 @@ function createBillingRecord(pTenantId, pOverrides) {
     meter_charges:  0,
     rent:           0,
     extra:          0,
+    extra_reason:   "",
     total_due:      0,
     paid_amount:    0,
     paid_date:      "",

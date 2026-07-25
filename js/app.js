@@ -23,6 +23,7 @@ var TenantRentApp = /** @class */ (function () {
   // ═══════════════════════════════════════════════════════════════════════════
   TenantRentApp.prototype._init = async function () {
     var self = this;
+    this._initTheme();
 
     // 1. Load from LocalStorage cache first
     this.arrTenants = storageService.getTenants();
@@ -290,9 +291,18 @@ var TenantRentApp = /** @class */ (function () {
   };
 
 
+  TenantRentApp.prototype._initTheme = function () {
+    var sSaved = localStorage.getItem("tenantrent_theme");
+    var sTheme = sSaved || "light";
+    document.documentElement.setAttribute("data-theme", sTheme);
+  };
+
   TenantRentApp.prototype._toggleTheme = function () {
     var html = document.documentElement;
-    html.setAttribute("data-theme", html.getAttribute("data-theme") === "dark" ? "light" : "dark");
+    var sCurrent = html.getAttribute("data-theme") || "light";
+    var sNext = sCurrent === "dark" ? "light" : "dark";
+    html.setAttribute("data-theme", sNext);
+    localStorage.setItem("tenantrent_theme", sNext);
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -383,10 +393,16 @@ var TenantRentApp = /** @class */ (function () {
   };
 
   TenantRentApp.prototype.deleteTenant = async function (psTenantId) {
-    if (confirm("Delete this tenant and ALL their billing records? This cannot be undone.")) {
-      this.arrTenants = this.arrTenants.filter(function (t) { return t.tenant_id !== psTenantId; });
-      this.sActiveTenantId = this.arrTenants.length > 0 ? this.arrTenants[0].tenant_id : null;
-      await this._deleteTenantRemote(psTenantId);
+    var self = this;
+    var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === psTenantId; });
+    if (!objTenant) return;
+
+    if (confirm("Soft Delete: Deactivate tenant '" + objTenant.name + "'? The tenant profile and billing history will be safely archived (soft deleted) as Inactive.")) {
+      objTenant.status = "Inactive";
+      await this._saveTenant(objTenant);
+
+      var arrActive = this.arrTenants.filter(function (t) { return (t.status || "Active") !== "Inactive"; });
+      this.sActiveTenantId = arrActive.length > 0 ? arrActive[0].tenant_id : null;
       this._render();
     }
   };
@@ -418,6 +434,7 @@ var TenantRentApp = /** @class */ (function () {
         document.getElementById("input-water-unit")      .value = objRec.water_units;
         document.getElementById("input-monthly-rent")    .value = objRec.rent;
         document.getElementById("input-extra-charge")    .value = objRec.extra;
+        document.getElementById("input-extra-reason")    .value = objRec.extra_reason || "";
         document.getElementById("input-received-amount") .value = objRec.paid_amount;
         document.getElementById("input-received-date")   .value = objRec.paid_date;
         document.getElementById("input-remark")          .value = objRec.notes;
@@ -437,6 +454,7 @@ var TenantRentApp = /** @class */ (function () {
       document.getElementById("input-water-before") .value = fLastWater;
       document.getElementById("input-monthly-rent") .value = objTenant.base_rent;
       document.getElementById("input-extra-charge") .value = 0;
+      document.getElementById("input-extra-reason") .value = "";
       document.getElementById("input-received-amount").value = 0;
     }
 
@@ -510,6 +528,7 @@ var TenantRentApp = /** @class */ (function () {
     var mMeter = fTU * mRate;
     var mRent  = parseFloat(document.getElementById("input-monthly-rent")    .value) || 0;
     var mExtra = parseFloat(document.getElementById("input-extra-charge")    .value) || 0;
+    var sExtraReason = document.getElementById("input-extra-reason").value.trim();
     var mTotal = mRent + mMeter + mExtra;
     var mPaid  = parseFloat(document.getElementById("input-received-amount") .value) || 0;
     var mBal   = mTotal - mPaid;
@@ -527,7 +546,7 @@ var TenantRentApp = /** @class */ (function () {
           elec_prev: fEB, elec_curr: fEC, elec_units: fEU,
           water_prev: fWB, water_curr: fWC, water_units: fWU,
           total_units: fTU, unit_rate: mRate, meter_charges: mMeter,
-          rent: mRent, extra: mExtra, total_due: mTotal,
+          rent: mRent, extra: mExtra, extra_reason: sExtraReason, total_due: mTotal,
           paid_amount: mPaid,
           paid_date: document.getElementById("input-received-date").value,
           balance: mBal, payment_status: sStatus,
@@ -541,7 +560,7 @@ var TenantRentApp = /** @class */ (function () {
         elec_prev: fEB, elec_curr: fEC, elec_units: fEU,
         water_prev: fWB, water_curr: fWC, water_units: fWU,
         total_units: fTU, unit_rate: mRate, meter_charges: mMeter,
-        rent: mRent, extra: mExtra, total_due: mTotal,
+        rent: mRent, extra: mExtra, extra_reason: sExtraReason, total_due: mTotal,
         paid_amount: mPaid,
         paid_date: document.getElementById("input-received-date").value,
         balance: mBal, payment_status: sStatus,
@@ -723,7 +742,7 @@ var TenantRentApp = /** @class */ (function () {
             (objRec.extra > 0 ?
             "<tr>" +
               "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0'>➕ Extra Charges</td>" +
-              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;color:#475569'>Miscellaneous</td>" +
+              "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;color:#475569'>" + (objRec.extra_reason ? objRec.extra_reason : "Miscellaneous") + "</td>" +
               "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right'>—</td>" +
               "<td style='padding:0.4rem 0.6rem;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600'>" + formatCurrency(objRec.extra) + "</td>" +
             "</tr>" : "") +
@@ -786,7 +805,7 @@ var TenantRentApp = /** @class */ (function () {
       "💧 *Water*: " + r.water_prev + " → " + r.water_curr + " (" + r.water_units + " units)\n" +
       "📊 *Meter Charges*: " + formatCurrency(r.meter_charges) + " (@ ₹" + r.unit_rate + "/unit)\n" +
       "🏠 *Base Rent*: " + formatCurrency(r.rent) + "\n" +
-      (r.extra > 0 ? "➕ *Extra Charges*: " + formatCurrency(r.extra) + "\n" : "") +
+      (r.extra > 0 ? "➕ *Extra Charges*" + (r.extra_reason ? " (" + r.extra_reason + ")" : "") + ": " + formatCurrency(r.extra) + "\n" : "") +
       "💵 *TOTAL DUE*: *" + formatCurrency(r.total_due) + "*\n\n" +
       "✅ Received: " + formatCurrency(r.paid_amount) + (r.paid_date ? " (" + formatDateDisplay(r.paid_date) + ")" : "") + "\n" +
       "⚠️ Balance: *" + formatCurrency(r.balance) + "*\n" +
@@ -865,9 +884,10 @@ var TenantRentApp = /** @class */ (function () {
 
 
   TenantRentApp.prototype._renderStats = function () {
-    var iTenants = this.arrTenants.length;
+    var arrActive = this.arrTenants.filter(function (t) { return (t.status || "Active") !== "Inactive"; });
+    var iTenants = arrActive.length;
     var mCollected = 0, mPending = 0, fUnits = 0;
-    this.arrTenants.forEach(function (t) {
+    arrActive.forEach(function (t) {
       (t.billing_records || []).forEach(function (r) {
         mCollected += Number(r.paid_amount) || 0;
         mPending   += Number(r.balance) > 0 ? Number(r.balance) : 0;
@@ -885,12 +905,14 @@ var TenantRentApp = /** @class */ (function () {
     var container = document.getElementById("tenant-tabs-container");
     container.innerHTML = "";
 
-    if (this.arrTenants.length === 0) {
-      container.innerHTML = "<span style='color:var(--text-muted);font-size:0.875rem;padding:0.5rem'>No tenants yet. Click <strong>Add New Tenant</strong> to get started.</span>";
+    var arrActive = this.arrTenants.filter(function (t) { return (t.status || "Active") !== "Inactive"; });
+
+    if (arrActive.length === 0) {
+      container.innerHTML = "<span style='color:var(--text-muted);font-size:0.875rem;padding:0.5rem'>No active tenants yet. Click <strong>Add New Tenant</strong> to get started.</span>";
       return;
     }
 
-    this.arrTenants.forEach(function (t) {
+    arrActive.forEach(function (t) {
       var btn = document.createElement("button");
       btn.className = "tenant-tab" + (t.tenant_id === self.sActiveTenantId ? " active" : "");
       btn.innerHTML = "<i data-feather='user'></i> " + t.name + " <small>(" + t.room + ")</small>";
@@ -985,10 +1007,12 @@ var TenantRentApp = /** @class */ (function () {
     var btnSendBill = document.getElementById("btn-send-bill-whatsapp");
     if (btnSendBill) btnSendBill.style.display = bIsAdmin ? "inline-flex" : "none";
 
+    var arrActive = this.arrTenants.filter(function (t) { return (t.status || "Active") !== "Inactive"; });
+
     var sel = document.getElementById("select-portal-tenant");
     if (sel) {
       sel.innerHTML = "";
-      this.arrTenants.forEach(function (t) {
+      arrActive.forEach(function (t) {
         var opt = document.createElement("option");
         opt.value   = t.tenant_id;
         opt.innerText = t.name + " (" + t.room + ")";
@@ -998,8 +1022,8 @@ var TenantRentApp = /** @class */ (function () {
     }
 
     var objTenant = this.arrTenants.find(function (t) { return t.tenant_id === self.sActiveTenantId; });
-    if (!objTenant && this.arrTenants.length > 0) {
-      objTenant = this.arrTenants[0];
+    if (!objTenant && arrActive.length > 0) {
+      objTenant = arrActive[0];
       this.sActiveTenantId = objTenant.tenant_id;
     }
 
@@ -1019,15 +1043,39 @@ var TenantRentApp = /** @class */ (function () {
     var latestCard = document.getElementById("latest-bill-container");
 
     if (objLatest) {
-      var sCls = objLatest.payment_status === "Paid" ? "paid" : "pending";
+      var sCls = objLatest.payment_status === "Paid" ? "paid" : (objLatest.payment_status === "Pending" ? "pending" : "partial");
+      var sLabel = "Total Amount Due";
+      var mDisplayVal = objLatest.total_due;
+      var sValColor = "var(--primary)";
+
+      if (objLatest.paid_amount > 0) {
+        if (objLatest.payment_status === "Paid") {
+          sLabel = "Paid in Full ✅";
+          mDisplayVal = 0;
+          sValColor = "var(--success)";
+        } else {
+          sLabel = "Balance Due";
+          mDisplayVal = objLatest.balance;
+          sValColor = "var(--danger)";
+        }
+      }
+
+      var sBreakdownSub = "";
+      if (objLatest.paid_amount > 0) {
+        sBreakdownSub = "<div style='font-size:0.75rem;color:var(--text-muted);margin-top:2px'>Total Bill: " + formatCurrency(objLatest.total_due) + " &middot; Paid: " + formatCurrency(objLatest.paid_amount) + "</div>";
+      }
+
       latestCard.innerHTML =
         "<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem'>" +
           "<div><span class='badge'>Current Billing Cycle</span>" +
           "<h2 style='margin:0.5rem 0'>" + formatDateDisplay(objLatest.period_from) + " to " + formatDateDisplay(objLatest.period_to) + "</h2>" +
-          "<p>⚡ Elec: " + objLatest.elec_units + " units | 💧 Water: " + objLatest.water_units + " units | Rate: ₹" + objLatest.unit_rate + "/unit</p></div>" +
-          "<div style='text-align:right'><span style='font-size:0.8rem;color:var(--text-muted)'>Total Amount Due</span>" +
-          "<h1 style='color:var(--primary);font-size:2rem'>" + formatCurrency(objLatest.total_due) + "</h1>" +
-          "<span class='status-pill " + sCls + "'>" + objLatest.payment_status + "</span></div>" +
+          "<p>⚡ Elec: " + objLatest.elec_units + " units | 💧 Water: " + objLatest.water_units + " units | Rate: ₹" + objLatest.unit_rate + "/unit" + (objLatest.extra > 0 ? " | ➕ Extra: " + formatCurrency(objLatest.extra) + (objLatest.extra_reason ? " (" + objLatest.extra_reason + ")" : "") : "") + "</p></div>" +
+          "<div style='text-align:right'>" +
+            "<span style='font-size:0.85rem;font-weight:600;color:var(--text-muted)'>" + sLabel + "</span>" +
+            "<h1 style='color:" + sValColor + ";font-size:2rem;margin:2px 0'>" + formatCurrency(mDisplayVal) + "</h1>" +
+            sBreakdownSub +
+            "<span class='status-pill " + sCls + "' style='margin-top:4px'>" + objLatest.payment_status + "</span>" +
+          "</div>" +
         "</div>";
     } else {
       latestCard.innerHTML = "<p style='color:var(--text-muted)'>No billing records yet.</p>";

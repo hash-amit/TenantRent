@@ -51,11 +51,12 @@ var BILLING_COLS = {
   extra:         14,   // O — Extra / miscellaneous charges
   total_due:     15,   // P — Grand total due = meter_charges + rent + extra
   paid_amount:   16,   // Q — Amount received from tenant
-  paid_date:      17,   // R — Date payment was received
+  paid_date:     17,   // R — Date payment was received
   balance:       18,   // S — Outstanding balance = total_due − paid_amount
   payment_status: 19,  // T — Paid | Partial | Pending
   notes:         20,   // U — Remarks / notes
-  created_at:    21    // V — ISO timestamp when record was created
+  created_at:    21,   // V — ISO timestamp when record was created
+  extra_reason:  22    // W — Reason / details for extra charges
 };
 
 // ─── Header rows ─────────────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ var BILLING_HEADERS = [
   "total_units","unit_rate","meter_charges",
   "rent","extra","total_due",
   "paid_amount","paid_date","balance","payment_status",
-  "notes","created_at"
+  "notes","created_at","extra_reason"
 ];
 
 var ADMIN_HEADERS = ["key", "value", "updated_at"];
@@ -134,6 +135,8 @@ function ensureSheets() {
     wsBilling = ss.insertSheet(SHEET_BILLING);
     wsBilling.appendRow(BILLING_HEADERS);
     wsBilling.getRange(1, 1, 1, BILLING_HEADERS.length).setFontWeight("bold");
+  } else {
+    wsBilling.getRange(1, 1, 1, BILLING_HEADERS.length).setValues([BILLING_HEADERS]).setFontWeight("bold");
   }
 
   var wsAdmin = ss.getSheetByName(SHEET_ADMIN);
@@ -246,7 +249,8 @@ function rowToBillingObj(row) {
     balance:        numVal(row, BILLING_COLS.balance),
     payment_status: val(row, BILLING_COLS.payment_status) || "Pending",
     notes:          val(row, BILLING_COLS.notes),
-    created_at:     val(row, BILLING_COLS.created_at)
+    created_at:     val(row, BILLING_COLS.created_at),
+    extra_reason:   val(row, BILLING_COLS.extra_reason)
   };
 }
 
@@ -311,7 +315,7 @@ function upsertBilling(ws, b) {
     b.total_units, b.unit_rate, b.meter_charges,
     b.rent, b.extra, b.total_due,
     b.paid_amount, b.paid_date, b.balance, b.payment_status,
-    b.notes, b.created_at || sNow
+    b.notes, b.created_at || sNow, b.extra_reason || ""
   ];
   upsertRow(ws, BILLING_COLS.record_id, b.record_id, newRow);
 }

@@ -121,7 +121,9 @@ var pinAuth = (function () {
     if (!sel) return;
     sel.innerHTML = "";
 
-    if (!pArrTenants || pArrTenants.length === 0) {
+    var arrActive = (pArrTenants || []).filter(function (t) { return (t.status || "Active") !== "Inactive"; });
+
+    if (arrActive.length === 0) {
       var opt = document.createElement("option");
       opt.value = "";
       opt.innerText = "No tenants found (Default PIN: 1234)";
@@ -129,7 +131,7 @@ var pinAuth = (function () {
       return;
     }
 
-    pArrTenants.forEach(function (t) {
+    arrActive.forEach(function (t) {
       var opt = document.createElement("option");
       opt.value = t.tenant_id;
       opt.innerText = t.name + " (" + (t.room || "Room") + ")";

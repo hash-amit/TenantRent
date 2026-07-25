@@ -969,15 +969,12 @@ body {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   PIN LOCK SCREEN
-   ═══════════════════════════════════════════════════════════════════ */
-
+/* Pin Lock Screen */
 #pin-lock-screen {
   position: fixed;
-  inset: 0;
+  top: 0; left: 0; right: 0; bottom: 0;
   z-index: 9999;
-  background: rgba(11, 15, 25, 0.88);
+  background: var(--bg-main);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   display: flex;
@@ -1001,40 +998,37 @@ body {
 .lock-logo {
   width: 48px;
   height: 48px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
   border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 6px 20px rgba(79, 70, 229, 0.3);
 }
 
 .lock-logo svg { color: white; width: 24px; height: 24px; }
 
 .lock-brand h1 {
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   font-weight: 800;
-  background: linear-gradient(135deg, #f8fafc, #6366f1);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
   letter-spacing: -0.03em;
 }
 
 .lock-brand p {
-  color: #64748b;
-  font-size: 0.825rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
   font-weight: 500;
 }
 
 .lock-card {
-  background: rgba(19, 27, 46, 0.88);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 20px;
   padding: 1.25rem 1.25rem;
-  width: 320px;
+  width: 330px;
   max-width: 95vw;
-  backdrop-filter: blur(20px);
-  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1044,7 +1038,7 @@ body {
 .lock-label {
   font-size: 0.825rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-align: center;
 }
 
@@ -1059,15 +1053,15 @@ body {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid #475569;
+  border: 2px solid var(--border-color);
   background: transparent;
   transition: all 0.2s ease;
 }
 
 .pin-dot.filled {
-  background: #6366f1;
-  border-color: #6366f1;
-  box-shadow: 0 0 10px rgba(99,102,241,0.6);
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 10px var(--primary-light);
   transform: scale(1.1);
 }
 
@@ -1082,9 +1076,9 @@ body {
 .pin-key {
   padding: 0.6rem 0;
   border-radius: 10px;
-  border: 1px solid rgba(99,102,241,0.15);
-  background: rgba(255,255,255,0.04);
-  color: #f1f5f9;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface-secondary);
+  color: var(--text-primary);
   font-size: 1.15rem;
   font-weight: 700;
   cursor: pointer;
@@ -1094,19 +1088,19 @@ body {
 
 
 .pin-key:hover {
-  background: rgba(99,102,241,0.2);
-  border-color: rgba(99,102,241,0.4);
+  background: var(--primary-light);
+  border-color: var(--primary);
   transform: translateY(-1px);
 }
 
 .pin-key:active { transform: scale(0.95); }
 
-.pin-key.key-clear { color: #f59e0b; }
-.pin-key.key-del   { color: #ef4444; }
+.pin-key.key-clear { color: var(--warning); }
+.pin-key.key-del   { color: var(--danger); }
 .pin-key.key-empty { visibility: hidden; cursor: default; }
 
 .pin-error-msg {
-  color: #ef4444;
+  color: var(--danger);
   font-size: 0.8rem;
   font-weight: 600;
   min-height: 1rem;
@@ -1126,8 +1120,8 @@ body {
 /* Role Selector Pill on Login Screen */
 .login-role-selector {
   display: flex;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 14px;
   padding: 4px;
   width: 100%;
@@ -1140,7 +1134,7 @@ body {
   border-radius: 10px;
   border: none;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 0.825rem;
   font-weight: 700;
   cursor: pointer;
@@ -1150,7 +1144,7 @@ body {
 }
 
 .login-role-btn:hover {
-  color: #f8fafc;
+  color: var(--text-primary);
 }
 
 .login-role-btn.active {
